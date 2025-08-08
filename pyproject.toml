@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=80", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-cvmfsutils"
+dynamic = ["version"]
+description = "Inspect CernVM-FS repositories"
+readme = "README"
+license = {text = "(c) 2015 CERN - BSD License"}
+authors = [
+    {name = "Rene Meusel", email = "rene.meusel@cern.ch"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: BSD License",
+    "Natural Language :: English",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Filesystems",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: System :: Systems Administration"
+]
+dependencies = [
+    "python-dateutil >= 1.4.1",
+    "requests >= 1.1.0",
+    "M2Crypto >= 0.20.0"
+]
+requires-python = ">=3.6"
+
+[project.urls]
+Homepage = "http://cernvm.cern.ch"
+
+[project.optional-dependencies]
+test = ["xmlrunner"]
+
+[project.scripts]
+big_catalogs = "cvmfs.scripts.big_catalogs:main"
+catdirusage = "cvmfs.scripts.catdirusage:main"
+cvmfs_search = "cvmfs.scripts.cvmfs_search:main"
+
+[tool.setuptools.packages.find]
+exclude = ["*.test*"]
+
+[tool.setuptools_scm]
