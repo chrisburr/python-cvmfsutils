@@ -1,28 +1,38 @@
 #!/usr/bin/env python3
 
-import sys
+import argparse
 import cvmfs
 import os
 
 
-def usage():
-    print("Usage: big_catalogs <local repo name | remote repo url> [BIGNUM [BIGMB]]")
-    print("  Lists all catalogs of the provided CVMFS repository with more than BIGNUM")
-    print("  files in them, default 100000, or more than BIGMB megabytes, default 50.")
-
-
 def main():
-    if len(sys.argv) < 2 or len(sys.argv) > 4:
-        usage()
-        sys.exit(1)
-
-    repo_identifier = sys.argv[1]
-    bignum = 100000
-    bigmb = 50
-    if len(sys.argv) > 2:
-        bignum = int(sys.argv[2])
-    if len(sys.argv) > 3:
-        bigmb = int(sys.argv[3])
+    parser = argparse.ArgumentParser(
+        description="Lists all catalogs of the provided CVMFS repository with more than BIGNUM files in them or more than BIGMB megabytes."
+    )
+    parser.add_argument(
+        "repo_identifier",
+        help="Local repo name or remote repo url"
+    )
+    parser.add_argument(
+        "bignum",
+        type=int,
+        nargs="?",
+        default=100000,
+        help="Minimum number of files in catalog (default: 100000)"
+    )
+    parser.add_argument(
+        "bigmb",
+        type=int,
+        nargs="?",
+        default=50,
+        help="Minimum size in MB (default: 50)"
+    )
+    
+    args = parser.parse_args()
+    
+    repo_identifier = args.repo_identifier
+    bignum = args.bignum
+    bigmb = args.bigmb
 
     repo = cvmfs.open_repository(repo_identifier)
     revision = repo.get_current_revision()

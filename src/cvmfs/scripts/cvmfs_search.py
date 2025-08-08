@@ -126,7 +126,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Search CVMFS repositories for all files matching a given download URL."
     )
-    parser.add_argument("url", type=str, help="A CVMFS URL to print the paths for.")
+    parser.add_argument("url", help="A CVMFS URL to print the paths for.")
     parser.add_argument(
         "--no-db-index",
         dest="db_index",

@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 
-import sys
+import argparse
 import cvmfs
 import os
 
 
-def usage():
-    print("Usage: catdirusage <local repo name | remote repo url> topdir")
-    print("  Prints the number of files in the current catalog for each sub-directory")
-    print("  under topdir, sorted smallest to largest.")
-    sys.exit(1)
-
-
 def main():
-    if len(sys.argv) != 3:
-        usage()
-
-    repo_identifier = sys.argv[1]
-    toppath = sys.argv[2]
+    parser = argparse.ArgumentParser(
+        description="Prints the number of files in the current catalog for each sub-directory under topdir, sorted smallest to largest."
+    )
+    parser.add_argument(
+        "repo_identifier",
+        help="Local repo name or remote repo url"
+    )
+    parser.add_argument(
+        "topdir",
+        help="Top directory to analyze"
+    )
+    
+    args = parser.parse_args()
+    
+    repo_identifier = args.repo_identifier
+    toppath = args.topdir
 
     repo = cvmfs.open_repository(repo_identifier)
     revision = repo.get_current_revision()

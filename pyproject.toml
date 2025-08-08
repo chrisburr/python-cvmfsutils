@@ -45,6 +45,7 @@ catdirusage = "cvmfs.scripts.catdirusage:main"
 cvmfs_search = "cvmfs.scripts.cvmfs_search:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 exclude = ["*.test*"]
 
 [tool.setuptools_scm]
