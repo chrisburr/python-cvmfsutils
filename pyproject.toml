@@ -37,7 +37,7 @@ requires-python = ">=3.6"
 Homepage = "http://cernvm.cern.ch"
 
 [project.optional-dependencies]
-test = ["xmlrunner"]
+test = ["unittest-xml-reporting"]
 
 [project.scripts]
 big_catalogs = "cvmfs.scripts.big_catalogs:main"
