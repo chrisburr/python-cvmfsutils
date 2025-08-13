@@ -90,7 +90,10 @@ class Whitelist(RootFile):
     def _verify_signature(self, public_key_path):
         pubkey = RSA.load_pub_key(public_key_path)
         try:
-            sig_sum = pubkey.public_decrypt(self.signature, RSA.pkcs1_padding).decode()
+            decrypted = pubkey.public_decrypt(self.signature, RSA.pkcs1_padding)
+            if decrypted is None:
+                return False
+            sig_sum = decrypted.decode()
             return sig_sum == self.signature_checksum
         except RSA.RSAError as e:
             return False
