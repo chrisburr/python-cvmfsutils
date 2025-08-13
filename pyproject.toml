@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=80", "setuptools-scm>=8"]
+requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "python-cvmfsutils"
+name = "cvmfsutils"
 dynamic = ["version"]
 description = "Inspect CernVM-FS repositories"
-readme = "README"
+readme = "README.md"
 license = {text = "(c) 2015 CERN - BSD License"}
 authors = [
     {name = "Rene Meusel", email = "rene.meusel@cern.ch"}
@@ -60,7 +60,7 @@ m2crypto = "*"
 pip = "*"
 
 [tool.pixi.pypi-dependencies]
-python-cvmfsutils = { path = ".", editable = true }
+cvmfsutils = { path = ".", editable = true }
 
 [tool.pixi.environments]
 testing = ["test"]
