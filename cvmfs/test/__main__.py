@@ -23,11 +23,11 @@ cmd_folder =  os.path.dirname(
 if cmd_folder not in sys.path:
     sys.path.insert(0, cmd_folder)
 
-from manifest_test     import *
-from whitelist_test    import *
-from md5_handling_test import *
-from certificate_test  import *
-from repository_test   import *
+from .manifest_test     import *
+from .whitelist_test    import *
+from .md5_handling_test import *
+from .certificate_test  import *
+from .repository_test   import *
 
 import optparse
 import sys

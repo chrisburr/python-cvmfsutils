@@ -7,8 +7,8 @@ This file is part of the CernVM File System auxiliary tools.
 import unittest
 
 import cvmfs
-from file_sandbox    import FileSandbox
-from mock_repository import MockRepository
+from .file_sandbox    import FileSandbox
+from .mock_repository import MockRepository
 
 
 class TestRepositoryWrapper(unittest.TestCase):

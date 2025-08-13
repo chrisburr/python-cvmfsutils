@@ -17,7 +17,7 @@ from M2Crypto import RSA
 import http.server
 import socketserver
 
-from file_sandbox import FileSandbox
+from .file_sandbox import FileSandbox
 
 class CvmfsTestServer(socketserver.TCPServer):
     allow_reuse_address = True

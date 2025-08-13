@@ -7,7 +7,7 @@ This file is part of the CernVM File System auxiliary tools.
 import unittest
 
 import cvmfs
-from mock_repository import MockRepository
+from .mock_repository import MockRepository
 
 
 class TestRepoInfo(unittest.TestCase):

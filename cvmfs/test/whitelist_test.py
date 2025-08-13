@@ -12,7 +12,7 @@ import zlib
 
 from dateutil.tz import tzutc
 
-from file_sandbox import FileSandbox
+from .file_sandbox import FileSandbox
 
 import cvmfs
 

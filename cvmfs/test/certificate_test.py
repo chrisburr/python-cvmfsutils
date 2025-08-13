@@ -10,7 +10,7 @@ import zlib
 
 from M2Crypto.X509 import X509
 
-from file_sandbox import FileSandbox
+from .file_sandbox import FileSandbox
 import cvmfs
 
 class TestCertificate(unittest.TestCase):
