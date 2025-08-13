@@ -3,9 +3,9 @@
 
 Summary: Inspect CernVM-FS repositories
 Name: python-cvmfsutils
-Version: 0.5.0
+Version: %{version}
 Release: %{release_prefix}%{?dist}
-Source0: %{name}-%{version}.tar.gz
+Source0: cvmfsutils-%{version}.tar.gz
 License: (c) 2015 CERN - BSD License
 Group: Development/Libraries
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
@@ -16,10 +16,12 @@ Url: http://cernvm.cern.ch
 
 BuildRequires: python3
 BuildRequires: python3-rpm-macros
+BuildRequires: python3-pip
 BuildRequires: python3-setuptools
 
 Requires: python3-dateutil
 Requires: python3-requests
+Requires: python3-m2crypto
 
 %description
 The CernVM-FS python package allows for the inspection of CernVM-FS
@@ -29,24 +31,31 @@ files) and the history of named snapshots inside any CernVM-FS repository.
 
 %prep
 #%%setup -n %{name}-%{version} -n %{name}-%{version}
-%autosetup -n %{name}-%{version}
+%autosetup -n cvmfsutils-%{version}
 
 %build
-python3 setup.py build
+# No build step needed - pip will handle setup.cfg via setup.py
 
 %install
-python3 setup.py install --single-version-externally-managed -O1 --root=$RPM_BUILD_ROOT --record=INSTALLED_FILES
+# Install directly from the source tarball - pip handles setup.cfg via setup.py
+python3 -m pip install --no-deps --root=%{buildroot} %{_sourcedir}/cvmfsutils-%{version}.tar.gz
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %license COPYING
-%doc README
+%doc README.md
 %{_bindir}/*
 %{python3_sitelib}/*
 
 %changelog
+* Wed Aug 13 2025 CI Build - %{version}-1
+- Modernize build system to use setup.cfg with setuptools
+- Update to use setuptools-scm for version management  
+- Keep minimal setup.py for compatibility
+- Update README reference to README.md
+
 * Fri Apr 26 2024 Dave Dykstra <dwd@fnal.gov>> - 0.5.0-1
 - Convert from python2 to python3
 - Add cvmfs_search util
