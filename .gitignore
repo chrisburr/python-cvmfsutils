@@ -6,3 +6,5 @@
 build/
 dist/
 .DS_Store
+# Ignore pixi.lock for now due to https://github.com/prefix-dev/pixi/issues/1274
+pixi.lock
