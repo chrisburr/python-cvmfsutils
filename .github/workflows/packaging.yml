@@ -2,7 +2,7 @@ name: Packaging
 
 on:
   push:
-    branches: [ devel ]
+    branches: [ devel, "ci-demo-fixed" ]
   pull_request:
     branches: [ devel ]
   release:
