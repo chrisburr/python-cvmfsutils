@@ -8,3 +8,7 @@ dist/
 .DS_Store
 # Ignore pixi.lock for now due to https://github.com/prefix-dev/pixi/issues/1274
 pixi.lock
+# Generated spec file (use generate_spec.py to create)
+rpm/python-cvmfsutils.spec
+# Generated version file
+src/cvmfs/_version.py

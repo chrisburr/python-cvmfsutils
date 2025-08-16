@@ -4,6 +4,7 @@ build-backend = "setuptools.build_meta"
 
 
 [tool.setuptools_scm]
+write_to = "src/cvmfs/_version.py"
 
 [tool.pixi.project]
 channels = ["conda-forge"]
@@ -13,6 +14,7 @@ platforms = ["linux-64", "osx-64", "osx-arm64"]
 python = ">=3.8"
 m2crypto = "*"
 pip = "*"
+setuptools-scm = "*"
 
 [tool.pixi.pypi-dependencies]
 cvmfsutils = { path = ".", editable = true }
@@ -25,3 +27,6 @@ unittest-xml-reporting = "*"
 
 [tool.pixi.feature.test.tasks]
 test = "python -m cvmfs.test"
+
+[tool.pixi.tasks]
+generate-spec = "python generate_spec.py"

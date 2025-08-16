@@ -3,12 +3,12 @@
 
 Summary: Inspect CernVM-FS repositories
 Name: python-cvmfsutils
-Version: 0.5.1.dev12+g0c610e4c5.d20250816
+Version: @VERSION@
 Release: %{release_prefix}%{?dist}
-Source0: cvmfsutils-0.5.1.dev12+g0c610e4c5.d20250816.tar.gz
+Source0: cvmfsutils-@VERSION@.tar.gz
 License: (c) 2015 CERN - BSD License
 Group: Development/Libraries
-BuildRoot: %{_tmppath}/%{name}-0.5.1.dev12+g0c610e4c5.d20250816-%{release}-buildroot
+BuildRoot: %{_tmppath}/%{name}-@VERSION@-%{release}-buildroot
 Prefix: %{_prefix}
 BuildArch: noarch
 Vendor: Rene Meusel <rene.meusel@cern.ch>
@@ -30,15 +30,15 @@ hierarchy, inspect CernVM-FS repository manifests (a.k.a. .cvmfspublished
 files) and the history of named snapshots inside any CernVM-FS repository.
 
 %prep
-#%%setup -n %{name}-0.5.1.dev12+g0c610e4c5.d20250816 -n %{name}-0.5.1.dev12+g0c610e4c5.d20250816
-%autosetup -n cvmfsutils-0.5.1.dev12+g0c610e4c5.d20250816
+#%%setup -n %{name}-@VERSION@ -n %{name}-@VERSION@
+%autosetup -n cvmfsutils-@VERSION@
 
 %build
 # No build step needed - pip will handle setup.cfg via setup.py
 
 %install
 # Install directly from the source tarball - pip handles setup.cfg via setup.py
-python3 -m pip install --no-deps --root=%{buildroot} %{_sourcedir}/cvmfsutils-0.5.1.dev12+g0c610e4c5.d20250816.tar.gz
+python3 -m pip install --no-deps --root=%{buildroot} %{_sourcedir}/cvmfsutils-@VERSION@.tar.gz
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -50,7 +50,7 @@ rm -rf $RPM_BUILD_ROOT
 %{python3_sitelib}/*
 
 %changelog
-* Wed Aug 13 2025 CI Build - 0.5.1.dev12+g0c610e4c5.d20250816-1
+* Wed Aug 13 2025 CI Build - @VERSION@-1
 - Modernize build system to use setup.cfg with setuptools
 - Update to use setuptools-scm for version management  
 - Keep minimal setup.py for compatibility

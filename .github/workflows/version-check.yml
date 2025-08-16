@@ -1,0 +1,57 @@
+name: Version Consistency Check
+
+on:
+  push:
+    branches: [ devel, "feature/*", "fix/*", "refactor/*" ]
+  pull_request:
+    branches: [ devel ]
+
+jobs:
+  version-check:
+    name: Check spec file version consistency
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for setuptools-scm
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install setuptools-scm
+      run: pip install setuptools-scm
+      
+    - name: Check spec file version consistency
+      run: |
+        # Get version from setuptools_scm
+        SCMVERSION=$(python -c "from setuptools_scm import get_version; print(get_version())")
+        echo "setuptools_scm version: $SCMVERSION"
+        
+        # Generate spec file
+        python generate_spec.py
+        
+        # Extract version from generated spec file
+        SPECVERSION=$(grep "^Version:" rpm/python-cvmfsutils.spec | cut -d' ' -f2)
+        echo "Spec file version: $SPECVERSION"
+        
+        # Check if they match
+        if [ "$SCMVERSION" = "$SPECVERSION" ]; then
+          echo "✓ Version consistency check passed"
+        else
+          echo "✗ Version mismatch!"
+          echo "  setuptools_scm: $SCMVERSION"
+          echo "  spec file:      $SPECVERSION"
+          exit 1
+        fi
+        
+    - name: Verify spec file has no external macros
+      run: |
+        # Check that the spec file doesn't use %{version} macro
+        if grep -q "%{version}" rpm/python-cvmfsutils.spec; then
+          echo "✗ Spec file still contains %{version} macro - should be replaced with actual version"
+          exit 1
+        else
+          echo "✓ Spec file does not use external version macro"
+        fi
