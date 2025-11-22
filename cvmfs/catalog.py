@@ -220,10 +220,17 @@ class Catalog(DatabaseObject):
 
     def find_nested_for_path(self, needle_path):
         """ Find the best matching nested CatalogReference for a given path """
+        # Cache the result to avoid repeated linear searches
+        if not hasattr(self, '_nested_path_cache'):
+            self._nested_path_cache = {}
+
+        real_needle_path = self._canonicalize_path(needle_path)
+        if real_needle_path in self._nested_path_cache:
+            return self._nested_path_cache[real_needle_path]
+
         nested_catalogs  = self.list_nested()
         best_match       = None
         best_match_score = 0
-        real_needle_path = self._canonicalize_path(needle_path)
         for nested_catalog in nested_catalogs:
             if real_needle_path.startswith(nested_catalog.root_path) and    \
                len(nested_catalog.root_path) > best_match_score and         \
@@ -231,6 +238,8 @@ class Catalog(DatabaseObject):
                                      nested_catalog.root_path):
                     best_match_score = len(nested_catalog.root_path)
                     best_match       = nested_catalog
+
+        self._nested_path_cache[real_needle_path] = best_match
         return best_match
 
 
