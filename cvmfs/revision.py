@@ -131,6 +131,7 @@ class Revision:
     def __init__(self, repository, tag):
         self.repository = repository
         self._tag = tag
+        self._path_catalog_cache = {}
 
     def __str__(self):
         return '<Revision ' + str(self.revision_number) \
@@ -166,6 +167,11 @@ class Revision:
         """
         Recursively walk down the Catalogs and find the best fit for a path
         """
+        # Check if we've already resolved this path
+        if needle_path in self._path_catalog_cache:
+            return self._path_catalog_cache[needle_path]
+
+        # Walk down the catalog tree to find the best fit
         clg = self.retrieve_root_catalog()
         while True:
             new_nested_reference = clg.find_nested_for_path(needle_path)
@@ -173,6 +179,9 @@ class Revision:
                 break
             nested_reference = new_nested_reference
             clg = self.retrieve_catalog(nested_reference.hash)
+
+        # Cache the result for future lookups
+        self._path_catalog_cache[needle_path] = clg
         return clg
 
     def lookup(self, path):
