@@ -5,6 +5,7 @@ This file is part of the CernVM File System auxiliary tools.
 """
 
 import os
+from collections import OrderedDict
 from datetime import datetime
 
 import dateutil.parser
@@ -26,9 +27,13 @@ from .repoinfo import RepoInfo
 class Repository(object):
     """ Wrapper around a CVMFS Repository representation """
 
+    # Maximum number of catalogs to keep in cache (prevents unbounded memory growth)
+    CATALOG_CACHE_SIZE = 1000
+
     def __init__(self, fetcher):
         self._fetcher = fetcher
-        self._opened_catalogs = {}
+        self._opened_catalogs = OrderedDict()
+        self._catalog_cache_size = self.CATALOG_CACHE_SIZE
         self._read_manifest()
         self._try_to_get_last_replication_timestamp()
         self._try_to_get_replication_state()
@@ -160,6 +165,8 @@ class Repository(object):
     def retrieve_catalog(self, catalog_hash):
         """ Download and open a catalog from the repository """
         if catalog_hash in self._opened_catalogs:
+            # Move to end to mark as recently used (LRU)
+            self._opened_catalogs.move_to_end(catalog_hash)
             return self._opened_catalogs[catalog_hash]
         return self._retrieve_and_open_catalog(catalog_hash)
 
@@ -177,6 +184,12 @@ class Repository(object):
     def _retrieve_and_open_catalog(self, catalog_hash):
         catalog_file = self.retrieve_object(catalog_hash, 'C')
         new_catalog = Catalog(catalog_file, catalog_hash)
+
+        # Evict least recently used catalog if cache is full
+        if len(self._opened_catalogs) >= self._catalog_cache_size:
+            # Remove the oldest item (first item in OrderedDict)
+            self._opened_catalogs.popitem(last=False)
+
         self._opened_catalogs[catalog_hash] = new_catalog
         return new_catalog
 
