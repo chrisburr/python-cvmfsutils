@@ -139,13 +139,19 @@ class Repository(object):
 
     def _get_revision_by_number(self, revision):
         history = self.retrieve_history()
-        revision_tag = history.get_tag_by_revision(revision)
-        return Revision(self, revision_tag)
+        try:
+            revision_tag = history.get_tag_by_revision(revision)
+            return Revision(self, revision_tag)
+        finally:
+            history.close()
 
     def _get_revision_by_tag(self, tag_name):
         history = self.retrieve_history()
-        revision_tag = history.get_tag_by_name(tag_name)
-        return Revision(self, revision_tag)
+        try:
+            revision_tag = history.get_tag_by_name(tag_name)
+            return Revision(self, revision_tag)
+        finally:
+            history.close()
 
     def retrieve_whitelist(self):
         """ retrieve and parse the .cvmfswhitelist file from the repository """
@@ -172,7 +178,9 @@ class Repository(object):
         try:
             del self._opened_catalogs[catalog.hash]
         except KeyError as e:
-            print("not found:" , catalog.hash)
+            pass  # Catalog was not in the cache
+        # Actually close the catalog file descriptor
+        catalog.close()
 
     def _retrieve_and_open_catalog(self, catalog_hash):
         catalog_file = self.retrieve_object(catalog_hash, 'C')

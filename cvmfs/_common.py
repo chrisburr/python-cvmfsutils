@@ -33,10 +33,27 @@ class DatabaseObject:
         self._file = db_file
         self._open_database()
 
-    def __del__(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def close(self):
+        """Explicitly close the database and file handles"""
         if self._db_handle:
             self._db_handle.close()
-        self._file.close()
+            self._db_handle = None
+        if self._file and not self._file.closed:
+            self._file.close()
+
+    def __del__(self):
+        # Fallback cleanup - but don't rely on this being called promptly
+        try:
+            self.close()
+        except:
+            pass
 
     def _open_database(self):
         """ Create and configure a database handle to the Catalog """

@@ -68,8 +68,13 @@ class RevisionIterator(object):
         return self.catalog_stack[-1]
 
     def _pop_catalog(self):
+        catalog_iterator = self._get_current_catalog()
         if self.finish_catalog_callback:
-            self.finish_catalog_callback(self._get_current_catalog().catalog)
+            self.finish_catalog_callback(catalog_iterator.catalog)
+        # Close the catalog to prevent file descriptor leak
+        # (Don't close if it's in the repository's opened_catalogs cache)
+        if catalog_iterator.catalog.hash not in self.revision.repository._opened_catalogs:
+            catalog_iterator.catalog.close()
         return self.catalog_stack.pop()
 
 
@@ -172,7 +177,10 @@ class Revision:
             if new_nested_reference is None:
                 break
             nested_reference = new_nested_reference
+            old_clg = clg
             clg = self.retrieve_catalog(nested_reference.hash)
+            # Close the old catalog to prevent file descriptor leak
+            self.repository.close_catalog(old_clg)
         return clg
 
     def lookup(self, path):
