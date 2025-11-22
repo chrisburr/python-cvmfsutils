@@ -186,6 +186,10 @@ class Catalog(DatabaseObject):
 
     def list_nested(self):
         """ List CatalogReferences to all contained nested catalogs """
+        # Cache the result to avoid repeated SQL queries
+        if hasattr(self, '_nested_cache'):
+            return self._nested_cache
+
         new_version = (self.schema <= 1.2 and self.schema_revision > 0)
         if new_version:
             sql_query = "SELECT path, sha1, size FROM nested_catalogs;"
@@ -193,9 +197,12 @@ class Catalog(DatabaseObject):
             sql_query = "SELECT path, sha1 FROM nested_catalogs;"
         catalogs = self.run_sql(sql_query)
         if new_version:
-            return [ CatalogReference(clg[0], clg[1], clg[2]) for clg in catalogs ]
+            result = [ CatalogReference(clg[0], clg[1], clg[2]) for clg in catalogs ]
         else:
-            return [ CatalogReference(clg[0], clg[1]) for clg in catalogs ]
+            result = [ CatalogReference(clg[0], clg[1]) for clg in catalogs ]
+
+        self._nested_cache = result
+        return result
 
 
     def get_statistics(self):
