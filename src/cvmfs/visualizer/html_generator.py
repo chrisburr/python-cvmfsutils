@@ -64,6 +64,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             justify-content: center;
             align-items: center;
             padding: 1rem;
+            max-height: calc(100vh - 60px);
+        }}
+
+        #chart {{
+            max-width: 600px;
+            max-height: 600px;
+            width: 100%;
+            height: auto;
         }}
 
         .sidebar {{
