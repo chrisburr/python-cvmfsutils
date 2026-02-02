@@ -21,11 +21,13 @@ def extract_version_from_changelog(template_content):
     Changelog entries look like:
         * Wed Aug 13 2025 Chris Burr <...> - 0.6.0-1
 
+    Commented entries (starting with #) are skipped.
+
     Returns the version (e.g., "0.6.0").
     """
-    # Find the %changelog section and the first entry
+    # Find the %changelog section and the first non-commented entry
     changelog_match = re.search(
-        r"%changelog\s*\n\*.*-\s*(\d+\.\d+\.?\d*)-\d+",
+        r"%changelog\s*\n(?:#[^\n]*\n)*\*.*-\s*(\d+\.\d+\.?\d*)-\d+",
         template_content,
     )
     if not changelog_match:
