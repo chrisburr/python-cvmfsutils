@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        alma-version: ["8", "9"]
+        alma-version: ["8", "9", "10"]
     container:
       image: almalinux:${{ matrix.alma-version }}
 
@@ -58,10 +58,8 @@ jobs:
       timeout-minutes: 10
       run: |
         dnf update -y
-        # Enable EPEL repository for python3-m2crypto
-        dnf install -y epel-release
-        dnf install -y git rpm-build rpm-devel python3-pip python3-devel
-        dnf install -y python3-requests python3-dateutil python3-m2crypto
+        dnf install -y git rpm-build rpm-devel python3-pip python3-devel python3-setuptools
+        dnf install -y python3-requests python3-dateutil python3-cryptography
 
         # Enable PowerTools/CRB for additional packages
         if [ "${{ matrix.alma-version }}" = "8" ]; then
@@ -173,7 +171,7 @@ jobs:
       run: |
         zypper refresh
         zypper install -y tar gzip git rpm-build python3-pip python3-devel python3-setuptools
-        zypper install -y python3-requests python3-dateutil python3-M2Crypto
+        zypper install -y python3-requests python3-dateutil python3-cryptography
 
     - uses: actions/checkout@v4
 
