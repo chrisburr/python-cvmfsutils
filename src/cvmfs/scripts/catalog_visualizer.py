@@ -8,12 +8,70 @@ Generate interactive visualizations of CVMFS catalog hierarchy and download cost
 
 import argparse
 import json
+import shutil
 import sys
 import webbrowser
 from pathlib import Path
 
 import cvmfs
 from cvmfs.visualizer import CatalogTreeBuilder, generate_html
+
+
+def _format_bytes(bytes_val: int) -> str:
+    """Format bytes as human-readable string."""
+    if bytes_val == 0:
+        return "0 B"
+    suffixes = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    val = float(bytes_val)
+    while val >= 1024 and i < len(suffixes) - 1:
+        val /= 1024
+        i += 1
+    return f"{val:.1f} {suffixes[i]}"
+
+
+class ProgressReporter:
+    """Reports build progress to stderr with live updates."""
+
+    def __init__(self, quiet: bool = False):
+        self.quiet = quiet
+        self.is_tty = sys.stderr.isatty()
+        self.term_width = shutil.get_terminal_size().columns
+        self._last_line_len = 0
+
+    def __call__(self, progress: dict) -> None:
+        if self.quiet:
+            return
+
+        path = progress["path"]
+        downloaded = progress["catalogs_downloaded"]
+        found = progress["catalogs_found"]
+        large = progress["large_catalogs_found"]
+        bytes_dl = progress["bytes_downloaded"]
+
+        # Truncate path if needed
+        max_path_len = min(40, self.term_width - 50)
+        if len(path) > max_path_len:
+            path = "..." + path[-(max_path_len - 3) :]
+
+        status = (
+            f"  Catalogs: {downloaded}/{found} downloaded, "
+            f"{large} large | {_format_bytes(bytes_dl)} | {path}"
+        )
+
+        if self.is_tty:
+            # Clear previous line and print new status
+            clear = "\r" + " " * self._last_line_len + "\r"
+            sys.stderr.write(clear + status)
+            sys.stderr.flush()
+            self._last_line_len = len(status)
+        # Non-TTY: don't spam, just update occasionally handled by caller
+
+    def finish(self) -> None:
+        """Clear the progress line."""
+        if not self.quiet and self.is_tty:
+            sys.stderr.write("\r" + " " * self._last_line_len + "\r")
+            sys.stderr.flush()
 
 
 def parse_size(size_str: str) -> int:
@@ -146,22 +204,33 @@ Examples:
         if args.max_depth:
             print(f"  Max depth: {args.max_depth}", file=sys.stderr)
 
+    progress = ProgressReporter(quiet=args.quiet)
+
     builder = CatalogTreeBuilder(
         repo,
         stop_threshold=args.stop_threshold,
         max_depth=args.max_depth,
+        progress_callback=progress,
     )
 
     try:
         root_node = builder.build()
     except Exception as e:
+        progress.finish()
         print(f"Error building catalog tree: {e}", file=sys.stderr)
         sys.exit(1)
 
+    progress.finish()
+
     if not args.quiet:
         print(
+            f"Found {builder.catalogs_found} catalogs "
+            f"({builder.large_catalogs_found} large, exploration stopped)",
+            file=sys.stderr,
+        )
+        print(
             f"Downloaded {builder.catalogs_downloaded} catalogs "
-            f"({builder.total_bytes_downloaded / (1024*1024):.2f} MB)",
+            f"({_format_bytes(builder.total_bytes_downloaded)})",
             file=sys.stderr,
         )
 

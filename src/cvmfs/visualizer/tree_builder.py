@@ -6,7 +6,7 @@ Traverses the catalog hierarchy and calculates cumulative download costs.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 
 @dataclass
@@ -52,6 +52,7 @@ class CatalogTreeBuilder:
         repository,
         stop_threshold: int = DEFAULT_STOP_THRESHOLD,
         max_depth: Optional[int] = None,
+        progress_callback: Optional[Callable[[dict], None]] = None,
     ):
         """Initialize the tree builder.
 
@@ -59,12 +60,18 @@ class CatalogTreeBuilder:
             repository: CVMFS repository object
             stop_threshold: Stop descending when catalog size exceeds this (bytes)
             max_depth: Maximum depth to traverse (None for unlimited)
+            progress_callback: Optional callback function called during traversal.
+                Receives a dict with keys: path, catalogs_downloaded,
+                bytes_downloaded, catalogs_found, large_catalogs_found
         """
         self.repository = repository
         self.stop_threshold = stop_threshold
         self.max_depth = max_depth
+        self.progress_callback = progress_callback
         self._catalogs_downloaded = 0
         self._total_bytes_downloaded = 0
+        self._catalogs_found = 0
+        self._large_catalogs_found = 0
 
     def build(self) -> CatalogNode:
         """Build the catalog tree starting from the root.
@@ -78,6 +85,13 @@ class CatalogTreeBuilder:
         root_size = root_catalog.db_size()
         self._catalogs_downloaded = 1
         self._total_bytes_downloaded = root_size
+        self._catalogs_found = 1
+
+        is_large = root_size > self.stop_threshold
+        if is_large:
+            self._large_catalogs_found = 1
+
+        self._report_progress("/")
 
         root_node = CatalogNode(
             path="/",
@@ -86,7 +100,7 @@ class CatalogTreeBuilder:
             cumulative_cost=root_size,
             depth=0,
             is_root=True,
-            is_large=root_size > self.stop_threshold,
+            is_large=is_large,
         )
 
         # Only descend if root is not too large and depth allows
@@ -94,6 +108,19 @@ class CatalogTreeBuilder:
             self._populate_children(root_node, root_catalog)
 
         return root_node
+
+    def _report_progress(self, path: str) -> None:
+        """Report progress via callback if available."""
+        if self.progress_callback:
+            self.progress_callback(
+                {
+                    "path": path,
+                    "catalogs_downloaded": self._catalogs_downloaded,
+                    "bytes_downloaded": self._total_bytes_downloaded,
+                    "catalogs_found": self._catalogs_found,
+                    "large_catalogs_found": self._large_catalogs_found,
+                }
+            )
 
     def _populate_children(self, parent_node: CatalogNode, parent_catalog) -> None:
         """Recursively populate children of a catalog node.
@@ -111,10 +138,15 @@ class CatalogTreeBuilder:
             if self.max_depth is not None and child_depth > self.max_depth:
                 continue
 
+            self._catalogs_found += 1
+
             # Use size from CatalogReference if available (no download needed)
             child_size = ref.size if ref.size > 0 else 0
             child_cost = parent_node.cumulative_cost + child_size
             is_large = child_size > self.stop_threshold
+
+            if is_large:
+                self._large_catalogs_found += 1
 
             child_node = CatalogNode(
                 path=ref.root_path,
@@ -134,6 +166,8 @@ class CatalogTreeBuilder:
                 self._catalogs_downloaded += 1
                 self._total_bytes_downloaded += child_catalog.db_size()
 
+                self._report_progress(ref.root_path)
+
                 # Update size with actual value if it was 0
                 if child_node.size_bytes == 0:
                     actual_size = child_catalog.db_size()
@@ -142,6 +176,8 @@ class CatalogTreeBuilder:
                         parent_node.cumulative_cost + actual_size
                     )
                     child_node.is_large = actual_size > self.stop_threshold
+                    if child_node.is_large:
+                        self._large_catalogs_found += 1
 
                 # Recurse if still not large
                 if not child_node.is_large and (
@@ -158,3 +194,13 @@ class CatalogTreeBuilder:
     def total_bytes_downloaded(self) -> int:
         """Total bytes downloaded during tree building."""
         return self._total_bytes_downloaded
+
+    @property
+    def catalogs_found(self) -> int:
+        """Total number of catalogs found (including those not downloaded)."""
+        return self._catalogs_found
+
+    @property
+    def large_catalogs_found(self) -> int:
+        """Number of large catalogs found (exploration stopped)."""
+        return self._large_catalogs_found
