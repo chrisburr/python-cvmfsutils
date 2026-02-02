@@ -72,6 +72,7 @@ class CatalogTreeBuilder:
         self._total_bytes_downloaded = 0
         self._catalogs_found = 0
         self._large_catalogs_found = 0
+        self._head_requests = 0
 
     def build(self) -> CatalogNode:
         """Build the catalog tree starting from the root.
@@ -119,8 +120,32 @@ class CatalogTreeBuilder:
                     "bytes_downloaded": self._total_bytes_downloaded,
                     "catalogs_found": self._catalogs_found,
                     "large_catalogs_found": self._large_catalogs_found,
+                    "head_requests": self._head_requests,
                 }
             )
+
+    def _get_catalog_size(self, catalog_hash: str, ref_size: int) -> int:
+        """Get catalog size, using HEAD request if ref_size is unknown.
+
+        Args:
+            catalog_hash: The catalog's hash
+            ref_size: Size from CatalogReference (0 if unknown)
+
+        Returns:
+            Estimated size in bytes (compressed size from HEAD as lower bound,
+            or uncompressed size from ref if available)
+        """
+        if ref_size > 0:
+            return ref_size
+
+        # Size unknown, use HEAD request to get compressed size
+        self._head_requests += 1
+        compressed_size = self.repository.get_object_size(catalog_hash, "C")
+        if compressed_size is not None:
+            return compressed_size
+
+        # Couldn't determine size, return 0 (will download to find out)
+        return 0
 
     def _populate_children(self, parent_node: CatalogNode, parent_catalog) -> None:
         """Recursively populate children of a catalog node.
@@ -140,8 +165,8 @@ class CatalogTreeBuilder:
 
             self._catalogs_found += 1
 
-            # Use size from CatalogReference if available (no download needed)
-            child_size = ref.size if ref.size > 0 else 0
+            # Get size - use HEAD request if ref.size is 0
+            child_size = self._get_catalog_size(ref.hash, ref.size)
             child_cost = parent_node.cumulative_cost + child_size
             is_large = child_size > self.stop_threshold
 
@@ -204,3 +229,8 @@ class CatalogTreeBuilder:
     def large_catalogs_found(self) -> int:
         """Number of large catalogs found (exploration stopped)."""
         return self._large_catalogs_found
+
+    @property
+    def head_requests(self) -> int:
+        """Number of HEAD requests made to check catalog sizes."""
+        return self._head_requests

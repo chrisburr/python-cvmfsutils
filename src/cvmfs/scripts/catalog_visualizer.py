@@ -228,9 +228,12 @@ Examples:
             f"({builder.large_catalogs_found} large, exploration stopped)",
             file=sys.stderr,
         )
+        head_info = ""
+        if builder.head_requests > 0:
+            head_info = f", {builder.head_requests} HEAD requests"
         print(
             f"Downloaded {builder.catalogs_downloaded} catalogs "
-            f"({_format_bytes(builder.total_bytes_downloaded)})",
+            f"({_format_bytes(builder.total_bytes_downloaded)}{head_info})",
             file=sys.stderr,
         )
 

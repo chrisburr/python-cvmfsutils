@@ -68,6 +68,15 @@ class Fetcher(object, metaclass=abc.ABCMeta):
         """ Abstract method to retrieve a raw file from the repository """
         pass
 
+    @abc.abstractmethod
+    def get_file_size(self, file_name):
+        """Get the size of a file without downloading it.
+
+        Returns:
+            Size in bytes, or None if size cannot be determined.
+        """
+        pass
+
 
 class LocalFetcher(Fetcher):
     """ Retrieves files only from the local cache """
@@ -94,6 +103,13 @@ class LocalFetcher(Fetcher):
             raw_file.close()
         else:
             raise FileNotFoundInRepository(file_name)
+
+    def get_file_size(self, file_name):
+        """Get compressed file size from local filesystem."""
+        full_path = self._make_file_uri(file_name)
+        if os.path.exists(full_path):
+            return os.path.getsize(full_path)
+        return None
 
 
 class RemoteFetcher(Fetcher):
@@ -130,3 +146,17 @@ class RemoteFetcher(Fetcher):
     def _retrieve_raw_file(self, file_name, cached_file):
         file_url = self._make_file_uri(file_name)
         self._download_content_and_store(cached_file, file_url)
+
+    def get_file_size(self, file_name):
+        """Get compressed file size via HEAD request."""
+        file_url = self._make_file_uri(file_name)
+        try:
+            response = requests.head(file_url, headers=self._default_headers,
+                                     allow_redirects=True, timeout=10)
+            if response.status_code == requests.codes.ok:
+                content_length = response.headers.get('Content-Length')
+                if content_length:
+                    return int(content_length)
+        except requests.RequestException:
+            pass
+        return None

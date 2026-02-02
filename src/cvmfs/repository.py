@@ -168,6 +168,11 @@ class Repository(object):
         path = "data/" + object_hash[:2] + "/" + object_hash[2:] + hash_suffix
         return self._fetcher.retrieve_file(path)
 
+    def get_object_size(self, object_hash, hash_suffix = ''):
+        """ Gets the compressed size of an object without downloading it """
+        path = "data/" + object_hash[:2] + "/" + object_hash[2:] + hash_suffix
+        return self._fetcher.get_file_size(path)
+
     def close_catalog(self, catalog):
         try:
             del self._opened_catalogs[catalog.hash]
