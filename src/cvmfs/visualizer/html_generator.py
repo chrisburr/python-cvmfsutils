@@ -68,8 +68,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
 
         #chart {{
-            max-width: 600px;
-            max-height: 600px;
+            max-width: min(80vh, 800px);
+            max-height: 80vh;
             width: 100%;
             height: auto;
         }}
@@ -267,9 +267,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <script>
     const data = {data_json};
 
-    const width = 500;
-    const height = 500;
-    const radius = width / 10;
+    const width = 800;
+    const height = 800;
+    const radius = width / 12;
 
     // Color scale based on size
     function getColor(d) {{
