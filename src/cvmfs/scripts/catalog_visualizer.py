@@ -48,15 +48,16 @@ class ProgressReporter:
         found = progress["catalogs_found"]
         large = progress["large_catalogs_found"]
         bytes_dl = progress["bytes_downloaded"]
+        bytes_skip = progress["bytes_skipped"]
 
         # Truncate path if needed
-        max_path_len = min(40, self.term_width - 50)
+        max_path_len = min(40, self.term_width - 60)
         if len(path) > max_path_len:
             path = "..." + path[-(max_path_len - 3) :]
 
         status = (
-            f"  Catalogs: {downloaded}/{found} downloaded, "
-            f"{large} large | {_format_bytes(bytes_dl)} | {path}"
+            f"  {downloaded}/{found} catalogs, {large} large | "
+            f"{_format_bytes(bytes_dl)} downloaded, {_format_bytes(bytes_skip)} skipped | {path}"
         )
 
         if self.is_tty:
@@ -228,12 +229,10 @@ Examples:
             f"({builder.large_catalogs_found} large, exploration stopped)",
             file=sys.stderr,
         )
-        head_info = ""
-        if builder.head_requests > 0:
-            head_info = f", {builder.head_requests} HEAD requests"
         print(
             f"Downloaded {builder.catalogs_downloaded} catalogs "
-            f"({_format_bytes(builder.total_bytes_downloaded)}{head_info})",
+            f"({_format_bytes(builder.total_bytes_downloaded)}), "
+            f"skipped {_format_bytes(builder.bytes_skipped)}",
             file=sys.stderr,
         )
 

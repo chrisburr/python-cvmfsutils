@@ -73,6 +73,7 @@ class CatalogTreeBuilder:
         self._catalogs_found = 0
         self._large_catalogs_found = 0
         self._head_requests = 0
+        self._bytes_skipped = 0
 
     def build(self) -> CatalogNode:
         """Build the catalog tree starting from the root.
@@ -121,6 +122,7 @@ class CatalogTreeBuilder:
                     "catalogs_found": self._catalogs_found,
                     "large_catalogs_found": self._large_catalogs_found,
                     "head_requests": self._head_requests,
+                    "bytes_skipped": self._bytes_skipped,
                 }
             )
 
@@ -172,6 +174,7 @@ class CatalogTreeBuilder:
 
             if is_large:
                 self._large_catalogs_found += 1
+                self._bytes_skipped += child_size
 
             child_node = CatalogNode(
                 path=ref.root_path,
@@ -234,3 +237,8 @@ class CatalogTreeBuilder:
     def head_requests(self) -> int:
         """Number of HEAD requests made to check catalog sizes."""
         return self._head_requests
+
+    @property
+    def bytes_skipped(self) -> int:
+        """Total bytes skipped by not downloading large catalogs."""
+        return self._bytes_skipped
