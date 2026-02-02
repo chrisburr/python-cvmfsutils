@@ -12,12 +12,52 @@ import io
 import tarfile
 import threading
 
-from M2Crypto import RSA
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
 import http.server
 import socketserver
 
 from .file_sandbox import FileSandbox
+
+
+def _rsa_private_encrypt(private_key, data):
+    """
+    Perform raw RSA private key encryption (equivalent to M2Crypto's private_encrypt).
+
+    This is a non-standard operation used for signature schemes where the
+    recipient recovers the original data using public_decrypt/recover_data_from_signature.
+    """
+    from cryptography.hazmat.primitives.asymmetric.rsa import (
+        rsa_crt_iqmp, rsa_crt_dmp1, rsa_crt_dmq1
+    )
+    from cryptography.hazmat.backends import default_backend
+
+    # Get key size in bytes
+    key_size_bytes = (private_key.key_size + 7) // 8
+
+    # PKCS#1 v1.5 padding: 0x00 0x01 [padding 0xFF bytes] 0x00 [data]
+    # Minimum padding is 8 bytes of 0xFF
+    padding_len = key_size_bytes - len(data) - 3
+    if padding_len < 8:
+        raise ValueError("Data too long for key size")
+
+    padded = b'\x00\x01' + (b'\xff' * padding_len) + b'\x00' + data
+
+    # Convert padded message to integer
+    padded_int = int.from_bytes(padded, byteorder='big')
+
+    # Get private key numbers for raw RSA operation
+    private_numbers = private_key.private_numbers()
+    d = private_numbers.d
+    n = private_numbers.public_numbers.n
+
+    # Perform raw RSA: signature = message^d mod n
+    sig_int = pow(padded_int, d, n)
+
+    # Convert back to bytes
+    return sig_int.to_bytes(key_size_bytes, byteorder='big')
 
 class CvmfsTestServer(socketserver.TCPServer):
     allow_reuse_address = True
@@ -87,8 +127,10 @@ class MockRepository:
             new_wl.write("--\n".encode())
             new_wl.write(wl_hash.hexdigest().encode())
             new_wl.write("\n".encode())
-            key = RSA.load_key(self.master_key)
-            sig = key.private_encrypt(wl_hash.hexdigest().encode(), RSA.pkcs1_padding)
+            with open(self.master_key, 'rb') as key_file:
+                key = serialization.load_pem_private_key(key_file.read(), password=None)
+            data = wl_hash.hexdigest().encode()
+            sig = _rsa_private_encrypt(key, data)
             new_wl.write(sig)
         os.rename(new_whitelist, old_whitelist)
 

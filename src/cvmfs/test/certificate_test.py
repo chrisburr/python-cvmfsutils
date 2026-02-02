@@ -8,7 +8,7 @@ import base64
 import unittest
 import zlib
 
-from M2Crypto.X509 import X509
+from cryptography.x509 import Certificate as X509Certificate
 
 from .file_sandbox import FileSandbox
 import cvmfs
@@ -51,7 +51,7 @@ class TestCertificate(unittest.TestCase):
         with open(self.certificate_file) as cert_file:
             cert = cvmfs.Certificate(cert_file)
             x509 = cert.get_openssl_certificate()
-            self.assertTrue(isinstance(x509, X509))
+            self.assertTrue(isinstance(x509, X509Certificate))
 
 
     def test_verify_message(self):

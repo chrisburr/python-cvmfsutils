@@ -21,11 +21,7 @@ BuildRequires: python3-setuptools
 
 Requires: python3-dateutil
 Requires: python3-requests
-%if 0%{?suse_version}
-Requires: python3-M2Crypto
-%else
-Requires: python3-m2crypto
-%endif
+Requires: python3-cryptography
 
 %description
 The CernVM-FS python package allows for the inspection of CernVM-FS
@@ -53,6 +49,9 @@ rm -rf $RPM_BUILD_ROOT
 %{python3_sitelib}/*
 
 %changelog
+* Mon Feb 02 2026 Chris Burr <christopher.burr@cern.ch> - 0.6.0-2
+- Replace M2Crypto dependency with cryptography library
+
 * Wed Aug 13 2025 Chris Burr <christopher.burr@cern.ch> - 0.6.0-1
 - Modernize build system to use pyproject.toml with setuptools
 - Use setuptools-scm for version management

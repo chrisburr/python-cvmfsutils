@@ -12,7 +12,7 @@ platforms = ["linux-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
 python = ">=3.8"
-m2crypto = "*"
+cryptography = "*"
 pip = "*"
 setuptools-scm = "*"
 

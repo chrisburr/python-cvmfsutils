@@ -6,7 +6,8 @@ This file is part of the CernVM File System auxiliary tools.
 
 from datetime import datetime
 from dateutil.tz import tzutc
-from M2Crypto import RSA
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 import re
 
@@ -88,14 +89,19 @@ class Whitelist(RootFile):
 
 
     def _verify_signature(self, public_key_path):
-        pubkey = RSA.load_pub_key(public_key_path)
+        with open(public_key_path, 'rb') as key_file:
+            pubkey = serialization.load_pem_public_key(key_file.read())
         try:
-            decrypted = pubkey.public_decrypt(self.signature, RSA.pkcs1_padding)
-            if decrypted is None:
+            recovered = pubkey.recover_data_from_signature(
+                self.signature,
+                padding.PKCS1v15(),
+                algorithm=None
+            )
+            if recovered is None:
                 return False
-            sig_sum = decrypted.decode()
+            sig_sum = recovered.decode()
             return sig_sum == self.signature_checksum
-        except RSA.RSAError as e:
+        except Exception:
             return False
 
 
