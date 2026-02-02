@@ -235,6 +235,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <div class="legend-color" style="background: repeating-linear-gradient(45deg, #ef4444, #ef4444 2px, #1a1a2e 2px, #1a1a2e 4px);"></div>
                     <span>Exploration stopped</span>
                 </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4a5568;"></div>
+                    <span>Directory (no catalog)</span>
+                </div>
             </div>
 
             <div class="instructions">
@@ -261,6 +265,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Color scale based on size
     function getColor(d) {{
+        // Virtual nodes (path intermediates without catalogs) are gray
+        if (d.data.is_virtual) return "#4a5568";
+
         const size = d.data.size || 0;
         const mb = size / (1024 * 1024);
 
@@ -365,7 +372,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById("info-hash").textContent = d.data.hash || "-";
 
         const badge = document.getElementById("large-badge");
-        if (d.data.is_large) {{
+        if (d.data.is_virtual) {{
+            badge.innerHTML = '<span class="large-indicator" style="background: #4a5568;">Directory (no catalog)</span>';
+        }} else if (d.data.is_large) {{
             badge.innerHTML = '<span class="large-indicator">Large catalog - exploration stopped</span>';
         }} else {{
             badge.innerHTML = "";

@@ -21,6 +21,7 @@ class CatalogNode:
     children: List["CatalogNode"] = field(default_factory=list)
     is_large: bool = False
     is_root: bool = False
+    is_virtual: bool = False  # True for intermediate path nodes without a catalog
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -33,8 +34,30 @@ class CatalogNode:
             "depth": self.depth,
             "is_large": self.is_large,
             "is_root": self.is_root,
+            "is_virtual": self.is_virtual,
             "children": [child.to_dict() for child in self.children],
         }
+
+    def find_or_create_child(self, path_segment: str, full_path: str, depth: int) -> "CatalogNode":
+        """Find existing child with path or create a virtual intermediate node."""
+        for child in self.children:
+            if child.path == full_path:
+                return child
+            # Check if this child is along the path
+            if full_path.startswith(child.path + "/"):
+                return child
+
+        # Create virtual intermediate node
+        virtual = CatalogNode(
+            path=full_path,
+            hash="",
+            size_bytes=0,
+            cumulative_cost=self.cumulative_cost,
+            depth=depth,
+            is_virtual=True,
+        )
+        self.children.append(virtual)
+        return virtual
 
 
 class CatalogTreeBuilder:
@@ -149,6 +172,74 @@ class CatalogTreeBuilder:
         # Couldn't determine size, return 0 (will download to find out)
         return 0
 
+    def _get_path_segments(self, parent_path: str, child_path: str) -> List[str]:
+        """Get the intermediate path segments between parent and child.
+
+        For parent "/" and child "/lib/lcg/releases", returns:
+        ["/lib", "/lib/lcg", "/lib/lcg/releases"]
+        """
+        if parent_path == "/":
+            parent_path = ""
+
+        # Get the relative part
+        if not child_path.startswith(parent_path):
+            return [child_path]
+
+        relative = child_path[len(parent_path):]
+        if relative.startswith("/"):
+            relative = relative[1:]
+
+        parts = relative.split("/")
+        segments = []
+        current = parent_path
+
+        for part in parts:
+            current = current + "/" + part if current else "/" + part
+            segments.append(current)
+
+        return segments
+
+    def _insert_at_path(
+        self,
+        root_node: CatalogNode,
+        parent_path: str,
+        catalog_path: str,
+        catalog_hash: str,
+        catalog_size: int,
+        is_large: bool,
+    ) -> CatalogNode:
+        """Insert a catalog node at the correct path location.
+
+        Creates intermediate virtual nodes as needed for path gaps.
+        """
+        segments = self._get_path_segments(parent_path, catalog_path)
+
+        current = root_node
+        for i, seg_path in enumerate(segments):
+            is_final = i == len(segments) - 1
+            seg_depth = current.depth + 1
+
+            if is_final:
+                # This is the actual catalog node
+                child_cost = current.cumulative_cost + catalog_size
+                child_node = CatalogNode(
+                    path=catalog_path,
+                    hash=catalog_hash,
+                    size_bytes=catalog_size,
+                    cumulative_cost=child_cost,
+                    depth=seg_depth,
+                    is_large=is_large,
+                )
+                current.children.append(child_node)
+                return child_node
+            else:
+                # Find or create intermediate node
+                current = current.find_or_create_child(
+                    seg_path.split("/")[-1], seg_path, seg_depth
+                )
+
+        return current
+
     def _populate_children(self, parent_node: CatalogNode, parent_catalog) -> None:
         """Recursively populate children of a catalog node.
 
@@ -159,33 +250,29 @@ class CatalogTreeBuilder:
         nested_refs = parent_catalog.list_nested()
 
         for ref in nested_refs:
-            child_depth = parent_node.depth + 1
-
-            # Check max depth
-            if self.max_depth is not None and child_depth > self.max_depth:
-                continue
-
             self._catalogs_found += 1
 
             # Get size - use HEAD request if ref.size is 0
             child_size = self._get_catalog_size(ref.hash, ref.size)
-            child_cost = parent_node.cumulative_cost + child_size
             is_large = child_size > self.stop_threshold
 
             if is_large:
                 self._large_catalogs_found += 1
                 self._bytes_skipped += child_size
 
-            child_node = CatalogNode(
-                path=ref.root_path,
-                hash=ref.hash,
-                size_bytes=child_size,
-                cumulative_cost=child_cost,
-                depth=child_depth,
-                is_large=is_large,
+            # Insert at correct path location, creating intermediate nodes
+            child_node = self._insert_at_path(
+                parent_node,
+                parent_node.path,
+                ref.root_path,
+                ref.hash,
+                child_size,
+                is_large,
             )
 
-            parent_node.children.append(child_node)
+            # Check max depth based on actual tree depth
+            if self.max_depth is not None and child_node.depth > self.max_depth:
+                continue
 
             # Only descend into non-large catalogs
             if not is_large:
@@ -201,15 +288,16 @@ class CatalogTreeBuilder:
                     actual_size = child_catalog.db_size()
                     child_node.size_bytes = actual_size
                     child_node.cumulative_cost = (
-                        parent_node.cumulative_cost + actual_size
+                        child_node.cumulative_cost -
+                        child_node.size_bytes + actual_size
                     )
                     child_node.is_large = actual_size > self.stop_threshold
                     if child_node.is_large:
                         self._large_catalogs_found += 1
 
-                # Recurse if still not large
+                # Recurse if still not large and within depth
                 if not child_node.is_large and (
-                    self.max_depth is None or child_depth < self.max_depth
+                    self.max_depth is None or child_node.depth < self.max_depth
                 ):
                     self._populate_children(child_node, child_catalog)
 
