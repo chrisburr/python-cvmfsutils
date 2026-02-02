@@ -255,9 +255,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <script>
     const data = {data_json};
 
-    const width = 700;
-    const height = 700;
-    const radius = width / 6;
+    const width = 500;
+    const height = 500;
+    const radius = width / 10;
 
     // Color scale based on size
     function getColor(d) {{
@@ -416,7 +416,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }}
 
     function arcVisible(d) {{
-        return d.y1 <= 3 && d.y0 >= 1 && d.x1 > d.x0;
+        return d.y1 <= 6 && d.y0 >= 1 && d.x1 > d.x0;
     }}
     </script>
 </body>
