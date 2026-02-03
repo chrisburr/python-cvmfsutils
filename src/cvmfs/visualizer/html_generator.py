@@ -294,10 +294,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }}
 
-    // Create hierarchy
-    const root = d3.hierarchy(data)
-        .sum(d => d.children && d.children.length ? 0 : Math.max(d.size, 1))
-        .sort((a, b) => b.value - a.value);
+    // Create hierarchy - siblings share parent's arc equally
+    const root = d3.hierarchy(data);
+    root.value = 1;
+    root.eachBefore(d => {{
+        if (d.children) {{
+            const childValue = d.value / d.children.length;
+            d.children.forEach(c => c.value = childValue);
+        }}
+    }});
 
     const partition = d3.partition()
         .size([2 * Math.PI, root.height + 1]);
