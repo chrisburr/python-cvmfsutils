@@ -65,6 +65,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             align-items: center;
             padding: 1rem;
             max-height: calc(100vh - 60px);
+            position: relative;
         }}
 
         #chart {{
@@ -129,21 +130,39 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
 
         .legend {{
-            margin-top: 1rem;
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            background: rgba(22, 33, 62, 0.9);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: 1px solid #0f3460;
+        }}
+
+        .legend-title {{
+            font-size: 0.75rem;
+            color: #e94560;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
         }}
 
         .legend-item {{
             display: flex;
             align-items: center;
-            margin-bottom: 0.5rem;
-            font-size: 0.85rem;
+            margin-bottom: 0.35rem;
+            font-size: 0.75rem;
+        }}
+
+        .legend-item:last-child {{
+            margin-bottom: 0;
         }}
 
         .legend-color {{
-            width: 20px;
-            height: 20px;
-            border-radius: 4px;
-            margin-right: 0.75rem;
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            margin-right: 0.5rem;
+            flex-shrink: 0;
         }}
 
         #large-badge {{
@@ -235,6 +254,33 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="container">
         <div class="chart-container">
             <svg id="chart"></svg>
+            <div class="legend">
+                <div class="legend-title">Size Legend</div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #22c55e;"></div>
+                    <span>&lt; 2 MB</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #eab308;"></div>
+                    <span>2 - 10 MB</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f97316;"></div>
+                    <span>10 - 50 MB</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ef4444;"></div>
+                    <span>&gt; 50 MB</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: repeating-linear-gradient(45deg, #ef4444, #ef4444 2px, #1a1a2e 2px, #1a1a2e 4px);"></div>
+                    <span>Stopped</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4a5568;"></div>
+                    <span>Virtual</span>
+                </div>
+            </div>
         </div>
 
         <div class="sidebar">
@@ -263,32 +309,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div id="large-badge"></div>
             </div>
 
-            <h2>Size Legend</h2>
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #22c55e;"></div>
-                    <span>&lt; 2 MB (Small)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #eab308;"></div>
-                    <span>2 - 10 MB (Medium)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #f97316;"></div>
-                    <span>10 - 50 MB (Large)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #ef4444;"></div>
-                    <span>&gt; 50 MB (Very Large)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: repeating-linear-gradient(45deg, #ef4444, #ef4444 2px, #1a1a2e 2px, #1a1a2e 4px);"></div>
-                    <span>Exploration stopped</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #4a5568;"></div>
-                    <span>Directory (no catalog)</span>
-                </div>
+            <h2>Largest Catalogs</h2>
+            <div class="info-panel" id="largest-catalogs">
+                <!-- Populated by JavaScript -->
             </div>
 
             <div class="instructions">
@@ -302,11 +325,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <strong>Build Statistics:</strong><br>
                 Catalogs downloaded: {catalogs_downloaded}<br>
                 Total downloaded: {total_downloaded}
-            </div>
-
-            <h2>Largest Catalogs</h2>
-            <div class="info-panel" id="largest-catalogs">
-                <!-- Populated by JavaScript -->
             </div>
         </div>
     </div>
