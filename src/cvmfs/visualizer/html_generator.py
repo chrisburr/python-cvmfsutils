@@ -175,6 +175,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             line-height: 1.5;
         }}
 
+        .catalog-item {{
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #0f3460;
+            cursor: pointer;
+        }}
+        .catalog-item:hover {{
+            background: #0f3460;
+        }}
+        .catalog-item:last-child {{
+            border-bottom: none;
+        }}
+        .catalog-path {{
+            font-family: monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+        }}
+        .catalog-size {{
+            font-size: 0.85rem;
+            color: #e94560;
+        }}
+
         svg text {{
             pointer-events: none;
             user-select: none;
@@ -260,6 +281,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <strong>Build Statistics:</strong><br>
                 Catalogs downloaded: {catalogs_downloaded}<br>
                 Total downloaded: {total_downloaded}
+            </div>
+
+            <h2>Largest Catalogs</h2>
+            <div class="info-panel" id="largest-catalogs">
+                <!-- Populated by JavaScript -->
             </div>
         </div>
     </div>
@@ -435,11 +461,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         document.getElementById("breadcrumb").textContent = breadcrumb;
 
         updateInfo(p);
+        updateLargestCatalogs(p);
     }}
 
     function arcVisible(d) {{
         return d.y1 <= 6 && d.y0 >= 1 && d.x1 > d.x0;
     }}
+
+    // Update largest catalogs list for a given hierarchy node
+    function updateLargestCatalogs(hierarchyNode) {{
+        const catalogs = hierarchyNode.descendants()
+            .filter(d => !d.data.is_virtual && d.data.size > 0)
+            .map(d => ({{ path: d.data.path, size: d.data.size }}))
+            .sort((a, b) => b.size - a.size)
+            .slice(0, 10);
+
+        const listHtml = catalogs.map(c =>
+            `<div class="catalog-item" data-path="${{c.path}}">
+                <div class="catalog-size">${{formatBytes(c.size)}}</div>
+                <div class="catalog-path">${{c.path}}</div>
+            </div>`
+        ).join('');
+        document.getElementById('largest-catalogs').innerHTML = listHtml;
+
+        // Make items clickable to zoom in chart
+        document.querySelectorAll('.catalog-item').forEach(item => {{
+            item.addEventListener('click', () => {{
+                const targetPath = item.dataset.path;
+                const targetNode = root.descendants().find(d => d.data.path === targetPath);
+                if (targetNode) {{
+                    clicked(null, targetNode);
+                }}
+            }});
+        }});
+    }}
+
+    // Initial population
+    updateLargestCatalogs(root);
     </script>
 </body>
 </html>
