@@ -117,12 +117,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 0.9rem;
         }}
 
-        .info-value.path {{
-            word-break: break-all;
-            text-align: right;
-            max-width: 200px;
-        }}
-
         .info-value.hash {{
             max-width: 150px;
             overflow: hidden;
@@ -215,6 +209,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             pointer-events: none;
             user-select: none;
         }}
+
+        .path-bar {{
+            background: #16213e;
+            padding: 0.75rem 2rem;
+            border-top: 1px solid #0f3460;
+            font-family: monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }}
+        .path-bar .label {{
+            color: #888;
+            margin-right: 0.5rem;
+        }}
+        .path-bar .path {{
+            color: #e94560;
+        }}
     </style>
 </head>
 <body>
@@ -234,10 +244,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             <h2>Selected Catalog</h2>
             <div class="info-panel" id="info-panel">
-                <div class="info-row">
-                    <span class="info-label">Path</span>
-                    <span class="info-value path" id="info-path">/</span>
-                </div>
                 <div class="info-row">
                     <span class="info-label">Catalog Size</span>
                     <span class="info-value" id="info-size">-</span>
@@ -303,6 +309,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <!-- Populated by JavaScript -->
             </div>
         </div>
+    </div>
+
+    <div class="path-bar">
+        <span class="label">Selected:</span>
+        <span class="path" id="info-path">/</span>
     </div>
 
     <script>
