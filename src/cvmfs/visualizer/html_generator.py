@@ -123,6 +123,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             max-width: 200px;
         }}
 
+        .info-value.hash {{
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+        }}
+        .info-value.hash:hover {{
+            color: #e94560;
+        }}
+
         .legend {{
             margin-top: 1rem;
         }}
@@ -141,13 +152,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin-right: 0.75rem;
         }}
 
+        #large-badge {{
+            min-height: 1.75rem;
+            margin-top: 0.5rem;
+        }}
+
         .large-indicator {{
             display: inline-block;
             padding: 0.25rem 0.5rem;
             background: #e94560;
             border-radius: 4px;
             font-size: 0.75rem;
-            margin-top: 0.5rem;
         }}
 
         .stats {{
@@ -237,7 +252,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Hash</span>
-                    <span class="info-value" id="info-hash" style="font-size: 0.75rem;">-</span>
+                    <span class="info-value hash" id="info-hash" title="Click to copy">-</span>
                 </div>
                 <div id="large-badge"></div>
             </div>
@@ -359,19 +374,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .attr("fill", d => getColor(d))
         .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.8 : 0.6) : 0)
         .attr("stroke", d => {{
-            if (d.data.is_large && d.children && d.children.length === 0) {{
+            if (d.data.is_large && !d.children) {{
                 return "#1a1a2e";
             }}
             return "none";
         }})
         .attr("stroke-width", d => {{
-            if (d.data.is_large && d.children && d.children.length === 0) {{
+            if (d.data.is_large && !d.children) {{
                 return 2;
             }}
             return 0;
         }})
         .attr("stroke-dasharray", d => {{
-            if (d.data.is_large && d.children && d.children.length === 0) {{
+            if (d.data.is_large && !d.children) {{
                 return "4,2";
             }}
             return "none";
@@ -383,14 +398,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .on("mouseout", handleMouseOut)
         .on("click", clicked);
 
-    // Center circle for zooming out
+    // Center circle for zooming out to root
     const parent = svg.append("circle")
         .datum(root)
         .attr("r", radius)
         .attr("fill", "#16213e")
         .attr("pointer-events", "all")
         .style("cursor", "pointer")
-        .on("click", clicked)
+        .on("click", () => clicked(null, root))
         .on("mouseover", handleMouseOver)
         .on("mouseout", handleMouseOut);
 
@@ -431,6 +446,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Initial info
     updateInfo(root);
+
+    // Click to copy hash
+    document.getElementById('info-hash').addEventListener('click', function() {{
+        const hash = this.textContent;
+        if (hash && hash !== '-') {{
+            navigator.clipboard.writeText(hash).then(() => {{
+                const original = this.textContent;
+                this.textContent = 'Copied!';
+                setTimeout(() => this.textContent = original, 1000);
+            }});
+        }}
+    }});
 
     function clicked(event, p) {{
         parent.datum(p.parent || root);
