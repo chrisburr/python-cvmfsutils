@@ -36,40 +36,6 @@ def _format_count(count: int) -> str:
         return f"{count/1_000_000:.1f}M"
 
 
-def _find_collapsible_prefix(paths: list[str], min_components: int = 4, min_group_size: int = 3) -> str:
-    """Find a common prefix shared by enough paths to be worth collapsing.
-
-    Args:
-        paths: List of absolute paths
-        min_components: Minimum path components for prefix to be worth collapsing
-        min_group_size: Minimum number of paths that must share the prefix
-
-    Returns:
-        The common prefix, or empty string if none found
-    """
-    if len(paths) < min_group_size:
-        return ""
-
-    # Try progressively shorter prefixes until we find one shared by enough paths
-    # Start by finding the longest prefix shared by the first two paths
-    split_paths = [p.split("/") for p in paths]
-
-    # Find the longest potential prefix (from first path)
-    first = split_paths[0]
-
-    for prefix_len in range(len(first), min_components - 1, -1):
-        prefix_parts = first[:prefix_len]
-        prefix = "/".join(prefix_parts)
-
-        # Count how many paths share this prefix
-        matching = sum(1 for p in paths if p.startswith(prefix + "/") or p == prefix)
-
-        if matching >= min_group_size:
-            return prefix
-
-    return ""
-
-
 def cmd_ls(repo, revision, path: str, long_format: bool = False):
     """List directory contents."""
     entries = list(revision.list_directory(path))
