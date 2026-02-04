@@ -36,6 +36,40 @@ def _format_count(count: int) -> str:
         return f"{count/1_000_000:.1f}M"
 
 
+def _find_collapsible_prefix(paths: list[str], min_components: int = 4, min_group_size: int = 3) -> str:
+    """Find a common prefix shared by enough paths to be worth collapsing.
+
+    Args:
+        paths: List of absolute paths
+        min_components: Minimum path components for prefix to be worth collapsing
+        min_group_size: Minimum number of paths that must share the prefix
+
+    Returns:
+        The common prefix, or empty string if none found
+    """
+    if len(paths) < min_group_size:
+        return ""
+
+    # Try progressively shorter prefixes until we find one shared by enough paths
+    # Start by finding the longest prefix shared by the first two paths
+    split_paths = [p.split("/") for p in paths]
+
+    # Find the longest potential prefix (from first path)
+    first = split_paths[0]
+
+    for prefix_len in range(len(first), min_components - 1, -1):
+        prefix_parts = first[:prefix_len]
+        prefix = "/".join(prefix_parts)
+
+        # Count how many paths share this prefix
+        matching = sum(1 for p in paths if p.startswith(prefix + "/") or p == prefix)
+
+        if matching >= min_group_size:
+            return prefix
+
+    return ""
+
+
 def cmd_ls(repo, revision, path: str, long_format: bool = False):
     """List directory contents."""
     entries = list(revision.list_directory(path))
@@ -233,36 +267,54 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
     # Check which paths are nested catalog mountpoints
     nested_paths = {ref.root_path for ref in catalog.list_nested()}
 
+    # Determine entries to show (before collapsing for "other")
+    entries_to_show = sorted_dirs[:max_lines]
+    entries_other = sorted_dirs[max_lines:]
+
+    # Find common prefix for path collapsing (need at least 4 components, 3 paths)
+    paths_to_show = [p for p, _ in entries_to_show]
+    common = _find_collapsible_prefix(paths_to_show)
+
     print(f"{'Files':>10} {'Dirs':>8} {'Size':>10}  Path")
     print("-" * 60)
 
-    # Limit output and collapse small entries into "other"
-    shown = 0
-    other_stats = {"files": 0, "dirs": 0, "size": 0}
-    other_count = 0
+    # Print common prefix header if we have one
+    if common:
+        print(f"{'':>10} {'':>8} {'':>10}  {common}/")
 
-    for subdir, stats in sorted_dirs:
-        if shown < max_lines:
-            marker = " [catalog]" if subdir in nested_paths else ""
+    # Print entries with optional indentation
+    for subdir, stats in entries_to_show:
+        marker = " [catalog]" if subdir in nested_paths else ""
+        if common and subdir.startswith(common + "/"):
+            # Show indented relative path
+            rel_path = subdir[len(common) + 1:]
+            print(
+                f"{_format_count(stats['files']):>10} "
+                f"{_format_count(stats['dirs']):>8} "
+                f"{_format_bytes(stats['size']):>10}      "
+                f"{rel_path}{marker}"
+            )
+        else:
+            # Show full path
             print(
                 f"{_format_count(stats['files']):>10} "
                 f"{_format_count(stats['dirs']):>8} "
                 f"{_format_bytes(stats['size']):>10}  "
                 f"{subdir}{marker}"
             )
-            shown += 1
-        else:
+
+    # Collapse remaining entries into "other"
+    if entries_other:
+        other_stats = {"files": 0, "dirs": 0, "size": 0}
+        for _, stats in entries_other:
             other_stats["files"] += stats["files"]
             other_stats["dirs"] += stats["dirs"]
             other_stats["size"] += stats["size"]
-            other_count += 1
-
-    if other_count > 0:
         print(
             f"{_format_count(other_stats['files']):>10} "
             f"{_format_count(other_stats['dirs']):>8} "
             f"{_format_bytes(other_stats['size']):>10}  "
-            f"... and {other_count} more"
+            f"... and {len(entries_other)} more"
         )
 
     # Summary
