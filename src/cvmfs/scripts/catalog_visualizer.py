@@ -7,6 +7,7 @@ Generate interactive visualizations of CVMFS catalog hierarchy and download cost
 """
 
 import argparse
+from datetime import datetime, timezone
 import json
 import resource
 import shutil
@@ -342,12 +343,14 @@ Examples:
         return
 
     # Generate HTML
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     html = generate_html(
         root_node,
         repo_name,
         repo_url=args.repo_identifier,
         catalogs_downloaded=builder.catalogs_downloaded,
         total_downloaded=builder.total_bytes_downloaded,
+        generated_at=generated_at,
     )
 
     # Determine output path

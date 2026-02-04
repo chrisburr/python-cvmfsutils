@@ -376,7 +376,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="stats">
                 <strong>Build Statistics:</strong><br>
                 Catalogs downloaded: {catalogs_downloaded}<br>
-                Total downloaded: {total_downloaded}
+                Total downloaded: {total_downloaded}<br>
+                Generated: {generated_at}
             </div>
         </div>
     </div>
@@ -657,6 +658,7 @@ def generate_html(
     repo_url: str = "",
     catalogs_downloaded: int = 0,
     total_downloaded: int = 0,
+    generated_at: str = "",
 ) -> str:
     """Generate a self-contained HTML visualization.
 
@@ -666,6 +668,7 @@ def generate_html(
         repo_url: Full repository URL for commands
         catalogs_downloaded: Number of catalogs downloaded
         total_downloaded: Total bytes downloaded
+        generated_at: Timestamp string for when the visualization was generated
 
     Returns:
         Complete HTML string
@@ -680,4 +683,5 @@ def generate_html(
         data_json=data_json,
         catalogs_downloaded=catalogs_downloaded,
         total_downloaded=_format_bytes(total_downloaded),
+        generated_at=generated_at,
     )
