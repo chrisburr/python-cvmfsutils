@@ -203,6 +203,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             line-height: 1.5;
         }}
 
+        .tips {{
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 1rem;
+            line-height: 1.5;
+        }}
+        .tips strong {{
+            color: #e94560;
+        }}
+        .command-box {{
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            font-family: monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+            cursor: pointer;
+            position: relative;
+        }}
+        .command-box:hover {{
+            border-color: #e94560;
+        }}
+        .command-box::after {{
+            content: "click to copy";
+            position: absolute;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.65rem;
+            color: #666;
+        }}
+        .command-box:hover::after {{
+            color: #e94560;
+        }}
+
         .catalog-item {{
             padding: 0.5rem 0;
             border-bottom: 1px solid #0f3460;
@@ -328,6 +365,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 • Click on a segment to zoom in<br>
                 • Click center to zoom out<br>
                 • Hover for details
+            </div>
+
+            <div class="tips">
+                <strong>Why are catalogs large?</strong><br>
+                Catalog size = metadata entries, not file sizes.
+                A catalog with many files/directories has a large database.<br><br>
+                <strong>Investigate further:</strong>
+                <div class="command-box" id="explore-command">
+                    catalog_explorer {repo_name} du /
+                </div>
             </div>
 
             <div class="stats">
@@ -534,6 +581,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         updateInfo(p);
         updateLargestCatalogs(p);
+        updateExploreCommand(p);
     }}
 
     function arcVisible(d) {{
@@ -583,6 +631,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Initial population
     updateLargestCatalogs(root);
+
+    // Update explore command for current path
+    const repoName = "{repo_name}";
+    function updateExploreCommand(node) {{
+        const path = node.data.path || "/";
+        const cmd = `catalog_explorer ${{repoName}} du ${{path}}`;
+        document.getElementById('explore-command').textContent = cmd;
+    }}
+    updateExploreCommand(root);
+
+    // Click to copy explore command
+    document.getElementById('explore-command').addEventListener('click', function() {{
+        const cmd = this.textContent;
+        navigator.clipboard.writeText(cmd).then(() => {{
+            const original = this.textContent;
+            this.textContent = 'Copied!';
+            setTimeout(() => this.textContent = original, 1000);
+        }});
+    }});
     </script>
 </body>
 </html>
