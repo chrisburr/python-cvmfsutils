@@ -273,24 +273,37 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
                 f"{subdir}{marker}"
             )
 
-    # Collapse remaining entries into "other"
+    # Show count of remaining entries (without misleading totals since they overlap)
     if entries_other:
-        other_stats = {"files": 0, "dirs": 0, "size": 0}
-        for _, stats in entries_other:
-            other_stats["files"] += stats["files"]
-            other_stats["dirs"] += stats["dirs"]
-            other_stats["size"] += stats["size"]
-        print(
-            f"{_format_count(other_stats['files']):>10} "
-            f"{_format_count(other_stats['dirs']):>8} "
-            f"{_format_bytes(other_stats['size']):>10}  "
-            f"... and {len(entries_other)} more"
-        )
+        # Only count entries that aren't descendants of shown entries
+        shown_paths = {p for p, _ in entries_to_show}
+        independent_other = []
+        for other_path, stats in entries_other:
+            # Check if this is a descendant of any shown path
+            is_descendant = any(
+                other_path.startswith(shown + "/") for shown in shown_paths
+            )
+            if not is_descendant:
+                independent_other.append((other_path, stats))
 
-    # Summary
-    total_files = sum(s["files"] for s in display.values())
-    total_dirs = sum(s["dirs"] for s in display.values())
-    total_size = sum(s["size"] for s in display.values())
+        if independent_other:
+            other_stats = {"files": 0, "dirs": 0, "size": 0}
+            for _, stats in independent_other:
+                other_stats["files"] += stats["files"]
+                other_stats["dirs"] += stats["dirs"]
+                other_stats["size"] += stats["size"]
+            print(
+                f"{_format_count(other_stats['files']):>10} "
+                f"{_format_count(other_stats['dirs']):>8} "
+                f"{_format_bytes(other_stats['size']):>10}  "
+                f"... and {len(independent_other)} more"
+            )
+
+    # Summary - use top-level counts to avoid double-counting nested entries
+    top_level = count_at_depth(all_entries, path, 1)
+    total_files = sum(s["files"] for s in top_level.values())
+    total_dirs = sum(s["dirs"] for s in top_level.values())
+    total_size = sum(s["size"] for s in top_level.values())
     print("-" * 60)
     print(
         f"{_format_count(total_files):>10} "
