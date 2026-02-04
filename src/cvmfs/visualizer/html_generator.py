@@ -206,7 +206,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .catalog-item {{
             padding: 0.5rem 0;
             border-bottom: 1px solid #0f3460;
-            cursor: pointer;
         }}
         .catalog-item:hover {{
             background: #0f3460;
@@ -217,11 +216,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .catalog-path {{
             font-family: monospace;
             font-size: 0.8rem;
-            word-break: break-all;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+        }}
+        .catalog-path:hover {{
+            color: #e94560;
         }}
         .catalog-size {{
             font-size: 0.85rem;
             color: #e94560;
+            cursor: pointer;
+        }}
+        .catalog-size:hover {{
+            text-decoration: underline;
         }}
 
         svg text {{
@@ -273,7 +282,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <span>&gt; 50 MB</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-color" style="background: repeating-linear-gradient(45deg, #ef4444, #ef4444 2px, #1a1a2e 2px, #1a1a2e 4px);"></div>
+                    <div class="legend-color" style="background: #c15b5b;"></div>
                     <span>Stopped</span>
                 </div>
                 <div class="legend-item">
@@ -341,6 +350,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const height = 800;
     const radius = width / 12;
 
+    // Desaturate a hex color by blending with gray
+    function desaturate(hex, amount = 0.4) {{
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        const gray = (r + g + b) / 3;
+        const nr = Math.round(r + (gray - r) * amount);
+        const ng = Math.round(g + (gray - g) * amount);
+        const nb = Math.round(b + (gray - b) * amount);
+        return `#${{nr.toString(16).padStart(2, '0')}}${{ng.toString(16).padStart(2, '0')}}${{nb.toString(16).padStart(2, '0')}}`;
+    }}
+
     // Color scale based on size
     function getColor(d) {{
         // Virtual nodes (path intermediates without catalogs) are gray
@@ -349,10 +370,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const size = d.data.size || 0;
         const mb = size / (1024 * 1024);
 
-        if (mb < 2) return "#22c55e";      // Green - small
-        if (mb < 10) return "#eab308";     // Yellow - medium
-        if (mb < 50) return "#f97316";     // Orange - large
-        return "#ef4444";                   // Red - very large
+        let color;
+        if (mb < 2) color = "#22c55e";      // Green - small
+        else if (mb < 10) color = "#eab308"; // Yellow - medium
+        else if (mb < 50) color = "#f97316"; // Orange - large
+        else color = "#ef4444";              // Red - very large
+
+        // Desaturate if exploration was stopped
+        if (d.data.is_large && !d.children) {{
+            color = desaturate(color);
+        }}
+
+        return color;
     }}
 
     // Format bytes
@@ -402,24 +431,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .join("path")
         .attr("fill", d => getColor(d))
         .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.8 : 0.6) : 0)
-        .attr("stroke", d => {{
-            if (d.data.is_large && !d.children) {{
-                return "#1a1a2e";
-            }}
-            return "none";
-        }})
-        .attr("stroke-width", d => {{
-            if (d.data.is_large && !d.children) {{
-                return 2;
-            }}
-            return 0;
-        }})
-        .attr("stroke-dasharray", d => {{
-            if (d.data.is_large && !d.children) {{
-                return "4,2";
-            }}
-            return "none";
-        }})
         .attr("pointer-events", d => arcVisible(d.current) ? "auto" : "none")
         .attr("d", d => arc(d.current))
         .style("cursor", "pointer")
@@ -464,6 +475,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
     }}
 
+    // Track current zoomed node for restoring info on mouseout
+    let currentNode = root;
+
     function handleMouseOver(event, d) {{
         updateInfo(d);
         d3.select(this).attr("fill-opacity", 1);
@@ -471,6 +485,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function handleMouseOut(event, d) {{
         d3.select(this).attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.8 : 0.6) : 0);
+        updateInfo(currentNode);
     }}
 
     // Initial info
@@ -512,7 +527,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             .attr("pointer-events", d => arcVisible(d.target) ? "auto" : "none")
             .attrTween("d", d => () => arc(d.current));
 
-        // Update breadcrumb
+        // Update breadcrumb and current node
+        currentNode = p;
         let breadcrumb = p.data.path || "/";
         document.getElementById("breadcrumb").textContent = breadcrumb;
 
@@ -535,19 +551,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const listHtml = catalogs.map(c =>
             `<div class="catalog-item" data-path="${{c.path}}">
                 <div class="catalog-size">${{formatBytes(c.size)}}</div>
-                <div class="catalog-path">${{c.path}}</div>
+                <div class="catalog-path" title="${{c.path}}">${{c.path}}</div>
             </div>`
         ).join('');
         document.getElementById('largest-catalogs').innerHTML = listHtml;
 
-        // Make items clickable to zoom in chart
-        document.querySelectorAll('.catalog-item').forEach(item => {{
-            item.addEventListener('click', () => {{
-                const targetPath = item.dataset.path;
+        // Click on size to zoom in chart
+        document.querySelectorAll('.catalog-item .catalog-size').forEach(item => {{
+            item.addEventListener('click', (e) => {{
+                const targetPath = item.parentElement.dataset.path;
                 const targetNode = root.descendants().find(d => d.data.path === targetPath);
                 if (targetNode) {{
                     clicked(null, targetNode);
                 }}
+            }});
+        }});
+
+        // Click on path to copy to clipboard
+        document.querySelectorAll('.catalog-item .catalog-path').forEach(item => {{
+            item.addEventListener('click', (e) => {{
+                e.stopPropagation();
+                const path = item.textContent;
+                navigator.clipboard.writeText(path).then(() => {{
+                    const original = item.textContent;
+                    item.textContent = 'Copied!';
+                    setTimeout(() => item.textContent = original, 1000);
+                }});
             }});
         }});
     }}
