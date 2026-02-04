@@ -241,8 +241,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
 
         .catalog-item {{
-            padding: 0.5rem 0;
+            padding: 0.3rem 0;
             border-bottom: 1px solid #0f3460;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: baseline;
+            gap: 0.3rem;
+            cursor: pointer;
         }}
         .catalog-item:hover {{
             background: #0f3460;
@@ -250,24 +255,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .catalog-item:last-child {{
             border-bottom: none;
         }}
+        .catalog-size {{
+            color: #e94560;
+            flex-shrink: 0;
+        }}
         .catalog-path {{
             font-family: monospace;
-            font-size: 0.8rem;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            cursor: pointer;
-        }}
-        .catalog-path:hover {{
-            color: #e94560;
-        }}
-        .catalog-size {{
-            font-size: 0.85rem;
-            color: #e94560;
-            cursor: pointer;
-        }}
-        .catalog-size:hover {{
-            text-decoration: underline;
         }}
 
         svg text {{
@@ -597,34 +593,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             .slice(0, 10);
 
         const listHtml = catalogs.map(c =>
-            `<div class="catalog-item" data-path="${{c.path}}">
-                <div class="catalog-size">${{formatBytes(c.size)}}</div>
-                <div class="catalog-path" title="${{c.path}}">${{c.path}}</div>
+            `<div class="catalog-item" data-path="${{c.path}}" title="${{c.path}}">
+                <span class="catalog-size">${{formatBytes(c.size)}}:</span>
+                <span class="catalog-path">${{c.path}}</span>
             </div>`
         ).join('');
         document.getElementById('largest-catalogs').innerHTML = listHtml;
 
-        // Click on size to zoom in chart
-        document.querySelectorAll('.catalog-item .catalog-size').forEach(item => {{
-            item.addEventListener('click', (e) => {{
-                const targetPath = item.parentElement.dataset.path;
+        // Click to zoom in chart
+        document.querySelectorAll('.catalog-item').forEach(item => {{
+            item.addEventListener('click', () => {{
+                const targetPath = item.dataset.path;
                 const targetNode = root.descendants().find(d => d.data.path === targetPath);
                 if (targetNode) {{
                     clicked(null, targetNode);
                 }}
-            }});
-        }});
-
-        // Click on path to copy to clipboard
-        document.querySelectorAll('.catalog-item .catalog-path').forEach(item => {{
-            item.addEventListener('click', (e) => {{
-                e.stopPropagation();
-                const path = item.textContent;
-                navigator.clipboard.writeText(path).then(() => {{
-                    const original = item.textContent;
-                    item.textContent = 'Copied!';
-                    setTimeout(() => item.textContent = original, 1000);
-                }});
             }});
         }});
     }}
