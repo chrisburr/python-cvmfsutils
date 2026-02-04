@@ -26,11 +26,34 @@ for full_path, dirent in repo:
 
 ## Utilities
 
-Example programs "big_catalogs" and "catdirusage" are supplied in the
-"utils" directory, which are also useful for figuring out where to
-split up the catalogs in a cvmfs repository. Also, "cvmfs_search" is
-useful as a way to find out the original path(s) that correspond to a
-cvmfs hash.
+### catalog_visualizer
+
+Generate an interactive HTML visualization of the catalog hierarchy:
+
+```bash
+catalog_visualizer http://cvmfs-stratum-one.cern.ch/cvmfs/lhcb.cern.ch
+catalog_visualizer lhcb.cern.ch --stop-threshold 5MB  # Stop at large catalogs
+catalog_visualizer lhcb.cern.ch -j 8                  # Parallel downloads
+```
+
+### catalog_explorer
+
+Explore catalog contents to understand why catalogs are large:
+
+```bash
+catalog_explorer lhcb.cern.ch ls /lib           # List directory
+catalog_explorer lhcb.cern.ch ls -l /lib        # Long format with sizes
+catalog_explorer lhcb.cern.ch stat /conda       # Show catalog statistics
+catalog_explorer lhcb.cern.ch du /conda         # Find where files are (adaptive)
+catalog_explorer lhcb.cern.ch du /conda -d 2    # Fixed depth
+catalog_explorer lhcb.cern.ch tree /            # Show nested catalog tree
+```
+
+### Other utilities
+
+- `big_catalogs` - List large catalogs by file count or size
+- `catdirusage` - Count files in subdirectories
+- `cvmfs_search` - Find paths for a given content hash
 
 ## Installation
 
