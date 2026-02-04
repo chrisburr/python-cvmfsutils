@@ -211,6 +211,9 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
 
         Expands directories that have > expand_thresh of parent's files.
         Returns dict of {path: stats} for paths to display.
+
+        When a directory is expanded, BOTH the parent and children are included,
+        so you can see the total alongside the breakdown.
         """
         result = {}
 
@@ -239,6 +242,8 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
                 # Expand this directory - recurse into it
                 sub_results = get_display_paths(entries, subdir, expand_thresh, max_depth)
                 if sub_results:
+                    # Include BOTH the parent directory AND its children
+                    result[subdir] = stats
                     result.update(sub_results)
                 else:
                     # No children to show, show this directory
@@ -271,23 +276,22 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
     entries_to_show = sorted_dirs[:max_lines]
     entries_other = sorted_dirs[max_lines:]
 
-    # Find common prefix for path collapsing (need at least 4 components, 3 paths)
-    paths_to_show = [p for p, _ in entries_to_show]
-    common = _find_collapsible_prefix(paths_to_show)
+    # Use the query path as base for relative paths
+    base_path = path if path else ""
 
     print(f"{'Files':>10} {'Dirs':>8} {'Size':>10}  Path")
     print("-" * 60)
 
-    # Print common prefix header if we have one
-    if common:
-        print(f"{'':>10} {'':>8} {'':>10}  {common}/")
+    # Print base path header if it's long enough to be worth showing
+    if base_path and base_path.count("/") >= 3:
+        print(f"{'':>10} {'':>8} {'':>10}  {base_path}/")
 
-    # Print entries with optional indentation
+    # Print entries with relative paths
     for subdir, stats in entries_to_show:
         marker = " [catalog]" if subdir in nested_paths else ""
-        if common and subdir.startswith(common + "/"):
-            # Show indented relative path
-            rel_path = subdir[len(common) + 1:]
+        if base_path and subdir.startswith(base_path + "/"):
+            # Show relative path with indentation
+            rel_path = subdir[len(base_path) + 1:]
             print(
                 f"{_format_count(stats['files']):>10} "
                 f"{_format_count(stats['dirs']):>8} "
@@ -295,7 +299,7 @@ def cmd_du(repo, revision, path: str, depth: int = None, expand_threshold: float
                 f"{rel_path}{marker}"
             )
         else:
-            # Show full path
+            # Show full path (shouldn't happen normally)
             print(
                 f"{_format_count(stats['files']):>10} "
                 f"{_format_count(stats['dirs']):>8} "
