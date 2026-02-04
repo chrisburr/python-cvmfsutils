@@ -345,6 +345,7 @@ Examples:
     html = generate_html(
         root_node,
         repo_name,
+        repo_url=args.repo_identifier,
         catalogs_downloaded=builder.catalogs_downloaded,
         total_downloaded=builder.total_bytes_downloaded,
     )

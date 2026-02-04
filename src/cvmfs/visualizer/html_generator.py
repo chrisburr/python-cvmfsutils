@@ -616,10 +616,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     updateLargestCatalogs(root);
 
     // Update explore command for current path
-    const repoName = "{repo_name}";
+    const repoUrl = "{repo_url}";
     function updateExploreCommand(node) {{
         const path = node.data.path || "/";
-        const cmd = `catalog_explorer ${{repoName}} du ${{path}}`;
+        const cmd = `catalog_explorer ${{repoUrl}} du ${{path}}`;
         document.getElementById('explore-command').textContent = cmd;
     }}
     updateExploreCommand(root);
@@ -654,6 +654,7 @@ def _format_bytes(bytes_val: int) -> str:
 def generate_html(
     root_node: CatalogNode,
     repo_name: str,
+    repo_url: str = "",
     catalogs_downloaded: int = 0,
     total_downloaded: int = 0,
 ) -> str:
@@ -662,6 +663,7 @@ def generate_html(
     Args:
         root_node: Root CatalogNode from tree builder
         repo_name: Repository name for display
+        repo_url: Full repository URL for commands
         catalogs_downloaded: Number of catalogs downloaded
         total_downloaded: Total bytes downloaded
 
@@ -673,6 +675,7 @@ def generate_html(
 
     return HTML_TEMPLATE.format(
         repo_name=repo_name,
+        repo_url=repo_url or repo_name,
         d3_cdn=D3_CDN,
         data_json=data_json,
         catalogs_downloaded=catalogs_downloaded,
