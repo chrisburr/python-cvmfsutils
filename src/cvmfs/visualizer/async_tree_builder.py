@@ -255,13 +255,17 @@ class AsyncCatalogTreeBuilder:
                     nested_refs = parent_catalog.list_nested()
 
                     for ref in nested_refs:
-                        result = await self._process_single_ref(parent_node, ref)
-                        if result is not None:
-                            child_node, child_catalog = result
-                            if child_catalog is not None:
-                                async with self._lock:
-                                    items_in_flight += 1
-                                await work_queue.put((child_node, child_catalog))
+                        try:
+                            result = await self._process_single_ref(parent_node, ref)
+                            if result is not None:
+                                child_node, child_catalog = result
+                                if child_catalog is not None:
+                                    async with self._lock:
+                                        items_in_flight += 1
+                                    await work_queue.put((child_node, child_catalog))
+                        except Exception:
+                            # Log error but continue processing other refs
+                            pass
 
                     # Mark this item as done
                     async with self._lock:
