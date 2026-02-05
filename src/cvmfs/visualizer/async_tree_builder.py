@@ -257,6 +257,9 @@ class AsyncCatalogTreeBuilder:
                     # Process this catalog's nested refs
                     nested_refs = await parent_catalog.list_nested()
 
+                    # Close the catalog to free the database connection/thread
+                    await parent_catalog.close()
+
                     for ref in nested_refs:
                         try:
                             result = await self._process_single_ref(parent_node, ref)

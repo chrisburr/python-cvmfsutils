@@ -34,7 +34,6 @@ class AsyncRepository:
         Use AsyncRepository.open() factory method instead of calling directly.
         """
         self._fetcher = fetcher
-        self._opened_catalogs = {}
         self.manifest: Optional[Manifest] = None
         self.fqrn: Optional[str] = None
         self.last_replication: Optional[datetime] = None
@@ -79,17 +78,11 @@ class AsyncRepository:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit async context - close the fetcher and catalogs."""
-        for catalog in self._opened_catalogs.values():
-            await catalog.close()
-        self._opened_catalogs.clear()
+        """Exit async context - close the fetcher."""
         await self._fetcher.__aexit__(exc_type, exc_val, exc_tb)
 
     async def close(self) -> None:
-        """Close the repository, catalogs, and fetcher."""
-        for catalog in self._opened_catalogs.values():
-            await catalog.close()
-        self._opened_catalogs.clear()
+        """Close the repository and fetcher."""
         await self._fetcher.close()
 
     async def _initialize(self) -> None:
@@ -161,17 +154,15 @@ class AsyncRepository:
     async def retrieve_catalog(self, catalog_hash: str) -> Tuple[AsyncCatalog, bool]:
         """Download and open a catalog from the repository.
 
+        Note: Caller is responsible for closing the catalog when done.
+
         Args:
             catalog_hash: Hash of the catalog to retrieve
 
         Returns:
             Tuple of (AsyncCatalog object, was_cached)
         """
-        if catalog_hash in self._opened_catalogs:
-            return self._opened_catalogs[catalog_hash], True
-
-        catalog, was_cached = await self._retrieve_and_open_catalog(catalog_hash)
-        return catalog, was_cached
+        return await self._retrieve_and_open_catalog(catalog_hash)
 
     async def get_object_size(
         self, object_hash: str, hash_suffix: str = ""
@@ -202,13 +193,5 @@ class AsyncRepository:
         path = f"data/{catalog_hash[:2]}/{catalog_hash[2:]}C"
         catalog_path, was_cached = await self._fetcher.retrieve_file(path)
         new_catalog = await AsyncCatalog.open(catalog_path, catalog_hash)
-        self._opened_catalogs[catalog_hash] = new_catalog
         return new_catalog, was_cached
 
-    async def close_catalog(self, catalog: AsyncCatalog) -> None:
-        """Close a catalog and remove it from the opened catalogs cache."""
-        try:
-            await catalog.close()
-            del self._opened_catalogs[catalog.hash]
-        except KeyError:
-            pass
