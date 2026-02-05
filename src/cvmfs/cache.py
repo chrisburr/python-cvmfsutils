@@ -52,6 +52,9 @@ class DummyCache(Cache):
     def get(self, file_name):
         return None
 
+    def get_cache_path(self):
+        return None
+
     def transaction(self, file_name):
         return tempfile.NamedTemporaryFile("w+b")
 
