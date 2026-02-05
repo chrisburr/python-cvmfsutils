@@ -7,6 +7,7 @@ multiplexing for efficient parallel downloads of CVMFS catalog files.
 """
 
 import asyncio
+import logging
 import os
 import tempfile
 import zlib
@@ -19,6 +20,8 @@ import httpx
 import cvmfs
 from ._exceptions import FileNotFoundInRepository
 
+logger = logging.getLogger(__name__)
+
 
 class AsyncRemoteFetcher:
     """Async HTTP fetcher with HTTP/2 support and connection pooling.
@@ -28,6 +31,8 @@ class AsyncRemoteFetcher:
     """
 
     DEFAULT_CONCURRENCY = 100
+    MAX_RETRIES = 3
+    RETRY_BACKOFF = 1.0  # Base delay in seconds
 
     def __init__(
         self,
@@ -156,22 +161,53 @@ class AsyncRemoteFetcher:
         if cached_path:
             return cached_path, True
 
-        # Download from remote
+        # Download from remote with retry logic
         await self._ensure_client()
+        file_url = self._make_file_uri(file_name)
 
-        async with self._semaphore:
-            file_url = self._make_file_uri(file_name)
-
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
             try:
-                response = await self._client.get(file_url)
+                async with self._semaphore:
+                    response = await self._client.get(file_url)
+
+                    if response.status_code == 404:
+                        raise FileNotFoundInRepository(file_url)
+
+                    if response.status_code != 200:
+                        raise httpx.HTTPStatusError(
+                            f"HTTP {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+
+                    content = response.content
+                    break  # Success
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    raise FileNotFoundInRepository(file_url) from e
+                last_error = e
             except httpx.RequestError as e:
-                raise FileNotFoundInRepository(file_url) from e
+                last_error = e
 
-            if response.status_code != 200:
-                raise FileNotFoundInRepository(file_url)
+            # Retry with exponential backoff
+            if attempt < self.MAX_RETRIES - 1:
+                delay = self.RETRY_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "Retry %d/%d for %s after error: %s (waiting %.1fs)",
+                    attempt + 1,
+                    self.MAX_RETRIES,
+                    file_url,
+                    last_error,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        else:
+            # All retries failed
+            raise FileNotFoundInRepository(file_url) from last_error
 
-            content = response.content
-            if decompress:
+        if decompress:
                 content = zlib.decompress(content)
 
         # Write to cache

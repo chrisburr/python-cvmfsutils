@@ -266,10 +266,11 @@ class AsyncCatalogTreeBuilder:
                                     async with self._lock:
                                         items_in_flight += 1
                                     await work_queue.put((child_node, child_catalog))
-                        except Exception:
+                        except Exception as e:
                             logger.warning(
                                 "Failed to process catalog ref %s: %s",
                                 ref.root_path,
+                                e,
                                 exc_info=True,
                             )
 
