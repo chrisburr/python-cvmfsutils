@@ -6,8 +6,11 @@ Uses asyncio for efficient parallel catalog downloads with HTTP/2 multiplexing.
 """
 
 import asyncio
+import logging
 import os
 from typing import Callable, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from .tree_builder import CatalogNode
 
@@ -264,8 +267,11 @@ class AsyncCatalogTreeBuilder:
                                         items_in_flight += 1
                                     await work_queue.put((child_node, child_catalog))
                         except Exception:
-                            # Log error but continue processing other refs
-                            pass
+                            logger.warning(
+                                "Failed to process catalog ref %s: %s",
+                                ref.root_path,
+                                exc_info=True,
+                            )
 
                     # Mark this item as done
                     async with self._lock:
@@ -274,7 +280,7 @@ class AsyncCatalogTreeBuilder:
                             done_event.set()
 
                 except Exception:
-                    # Don't let worker die on error
+                    logger.exception("Worker error processing catalog")
                     async with self._lock:
                         items_in_flight -= 1
                         if items_in_flight == 0:
