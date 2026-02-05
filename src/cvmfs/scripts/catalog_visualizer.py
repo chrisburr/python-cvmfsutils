@@ -7,6 +7,7 @@ Generate interactive visualizations of CVMFS catalog hierarchy and download cost
 """
 
 import argparse
+import asyncio
 from datetime import datetime, timezone
 import json
 import resource
@@ -16,7 +17,9 @@ import webbrowser
 from pathlib import Path
 
 import cvmfs
+from cvmfs.async_repository import AsyncRepository
 from cvmfs.visualizer import CatalogTreeBuilder, generate_html
+from cvmfs.visualizer.async_tree_builder import AsyncCatalogTreeBuilder
 
 
 def _format_bytes(bytes_val: int) -> str:
@@ -138,6 +141,63 @@ def _increase_file_limit() -> None:
         pass
 
 
+async def async_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
+    """Async main function using HTTP/2 for efficient downloads.
+
+    Args:
+        args: Parsed command line arguments
+        cache_dir: Cache directory path or None
+        ignore_paths: List of paths to ignore
+        progress: ProgressReporter instance
+
+    Returns:
+        Tuple of (root_node, builder)
+    """
+    async with await AsyncRepository.open(
+        args.repo_identifier,
+        cache_dir=cache_dir,
+        max_concurrency=50,
+    ) as repo:
+        builder = AsyncCatalogTreeBuilder(
+            repo,
+            stop_threshold=args.stop_threshold,
+            max_depth=args.max_depth,
+            ignore_paths=ignore_paths,
+            progress_callback=progress,
+            max_workers=args.workers,
+        )
+
+        root_node = await builder.build()
+        return root_node, builder, repo.fqrn
+
+
+def sync_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
+    """Sync main function using the original requests-based fetcher.
+
+    Args:
+        args: Parsed command line arguments
+        cache_dir: Cache directory path or None
+        ignore_paths: List of paths to ignore
+        progress: ProgressReporter instance
+
+    Returns:
+        Tuple of (root_node, builder)
+    """
+    repo = cvmfs.open_repository(args.repo_identifier, cache_dir=cache_dir)
+
+    builder = CatalogTreeBuilder(
+        repo,
+        stop_threshold=args.stop_threshold,
+        max_depth=args.max_depth,
+        ignore_paths=ignore_paths,
+        progress_callback=progress,
+        max_workers=args.workers,
+    )
+
+    root_node = builder.build()
+    return root_node, builder, repo.fqrn
+
+
 def main():
     _increase_file_limit()
 
@@ -169,6 +229,7 @@ Examples:
 
   # Ignore specific paths
   catalog_visualizer lhcb.cern.ch --ignore /lib/var --ignore /lib/tmp
+
 """,
     )
 
@@ -249,9 +310,9 @@ Examples:
         "-j",
         "--workers",
         type=int,
-        default=4,
+        default=10,
         metavar="N",
-        help="Number of parallel workers for downloading catalogs (default: 4)",
+        help="Number of parallel workers for downloading catalogs (default: 10)",
     )
 
     args = parser.parse_args()
@@ -263,19 +324,16 @@ Examples:
     if cache_dir:
         Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
+    # Use async mode for remote repositories
+    use_async = args.repo_identifier.startswith(
+        "http://"
+    ) or args.repo_identifier.startswith("https://")
+
     # Open repository
     if not args.quiet:
         print(f"Opening repository: {args.repo_identifier}", file=sys.stderr)
         if cache_dir:
             print(f"Using cache directory: {cache_dir}", file=sys.stderr)
-
-    try:
-        repo = cvmfs.open_repository(args.repo_identifier, cache_dir=cache_dir)
-    except Exception as e:
-        print(f"Error opening repository: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    repo_name = repo.fqrn
 
     # Normalize ignore paths (ensure they start with /)
     ignore_paths = []
@@ -299,17 +357,15 @@ Examples:
 
     progress = ProgressReporter(quiet=args.quiet)
 
-    builder = CatalogTreeBuilder(
-        repo,
-        stop_threshold=args.stop_threshold,
-        max_depth=args.max_depth,
-        ignore_paths=ignore_paths,
-        progress_callback=progress,
-        max_workers=args.workers,
-    )
-
     try:
-        root_node = builder.build()
+        if use_async:
+            root_node, builder, repo_name = asyncio.run(
+                async_main(args, cache_dir, ignore_paths, progress)
+            )
+        else:
+            root_node, builder, repo_name = sync_main(
+                args, cache_dir, ignore_paths, progress
+            )
     except Exception as e:
         progress.finish()
         print(f"Error building catalog tree: {e}", file=sys.stderr)

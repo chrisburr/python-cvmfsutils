@@ -15,6 +15,9 @@ from .fetcher      import *
 from ._common      import _split_md5
 from ._common      import _combine_md5
 
+from .async_fetcher import AsyncRemoteFetcher
+from .async_repository import AsyncRepository
+
 import subprocess
 import re
 
