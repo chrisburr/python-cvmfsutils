@@ -40,6 +40,7 @@ class ProgressReporter:
         self.is_tty = sys.stderr.isatty()
         self.term_width = shutil.get_terminal_size().columns
         self._last_line_len = 0
+        self._last_logged_count = 0
 
     def __call__(self, progress: dict) -> None:
         if self.quiet:
@@ -76,7 +77,11 @@ class ProgressReporter:
             sys.stderr.write(clear + status)
             sys.stderr.flush()
             self._last_line_len = len(status)
-        # Non-TTY: don't spam, just update occasionally handled by caller
+        else:
+            # Non-TTY: print every 100 catalogs to show progress
+            if downloaded - self._last_logged_count >= 100:
+                print(status, file=sys.stderr)
+                self._last_logged_count = downloaded
 
     def finish(self) -> None:
         """Clear the progress line."""
