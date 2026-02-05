@@ -6,8 +6,9 @@ Traverses the catalog hierarchy and calculates cumulative download costs.
 """
 
 import os
+import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
@@ -361,41 +362,81 @@ class CatalogTreeBuilder:
 
         return child_node, None
 
-    def _populate_children(self, parent_node: CatalogNode, parent_catalog) -> None:
-        """Recursively populate children of a catalog node.
+    def _populate_children(self, root_node: CatalogNode, root_catalog) -> None:
+        """Populate all children using a work queue for true parallelism.
+
+        Uses a queue-based approach where workers process catalogs and add
+        newly discovered children to the queue, keeping all workers busy.
 
         Args:
-            parent_node: Parent CatalogNode to add children to
-            parent_catalog: Parent Catalog object to query for nested catalogs
+            root_node: Root CatalogNode to start from
+            root_catalog: Root Catalog object to query for nested catalogs
         """
+        if self.max_workers <= 1:
+            # Single-threaded mode - use simple recursion
+            self._populate_children_sequential(root_node, root_catalog)
+            return
+
+        # Work queue holds (parent_node, parent_catalog) tuples
+        work_queue = queue.Queue()
+        work_queue.put((root_node, root_catalog))
+
+        # Track active workers to know when we're done
+        active_workers = threading.Semaphore(0)
+        items_in_flight = [1]  # Use list to allow modification in nested function
+        items_lock = threading.Lock()
+
+        def worker():
+            while True:
+                try:
+                    # Wait for work with timeout to allow checking for completion
+                    try:
+                        parent_node, parent_catalog = work_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        # Check if we should exit (no more work coming)
+                        with items_lock:
+                            if items_in_flight[0] == 0:
+                                return
+                        continue
+
+                    # Process this catalog's nested refs
+                    nested_refs = parent_catalog.list_nested()
+
+                    for ref in nested_refs:
+                        child_node, child_catalog = self._process_single_ref(parent_node, ref)
+                        if child_catalog is not None:
+                            with items_lock:
+                                items_in_flight[0] += 1
+                            work_queue.put((child_node, child_catalog))
+
+                    # Mark this item as done
+                    with items_lock:
+                        items_in_flight[0] -= 1
+
+                except Exception as e:
+                    # Don't let worker die on error
+                    with items_lock:
+                        items_in_flight[0] -= 1
+
+        # Start worker threads
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(worker) for _ in range(self.max_workers)]
+
+            # Wait for all workers to complete
+            for future in futures:
+                future.result()
+
+    def _populate_children_sequential(self, parent_node: CatalogNode, parent_catalog) -> None:
+        """Sequential version of populate_children for single-threaded mode."""
         nested_refs = parent_catalog.list_nested()
 
         if not nested_refs:
             return
 
-        # Process refs in parallel, collect those needing recursion
-        to_recurse = []
-
-        if self.max_workers > 1:
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = {
-                    executor.submit(self._process_single_ref, parent_node, ref): ref
-                    for ref in nested_refs
-                }
-                for future in as_completed(futures):
-                    child_node, child_catalog = future.result()
-                    if child_catalog is not None:
-                        to_recurse.append((child_node, child_catalog))
-        else:
-            # Single-threaded mode
-            for ref in nested_refs:
-                child_node, child_catalog = self._process_single_ref(parent_node, ref)
-                if child_catalog is not None:
-                    to_recurse.append((child_node, child_catalog))
-
-        # Recurse into children (could also be parallelized, but keep simple for now)
-        for child_node, child_catalog in to_recurse:
-            self._populate_children(child_node, child_catalog)
+        for ref in nested_refs:
+            child_node, child_catalog = self._process_single_ref(parent_node, ref)
+            if child_catalog is not None:
+                self._populate_children_sequential(child_node, child_catalog)
 
     @property
     def catalogs_downloaded(self) -> int:
