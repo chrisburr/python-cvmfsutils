@@ -245,9 +245,10 @@ class AsyncCatalogTreeBuilder:
                             work_queue.get(), timeout=0.1
                         )
                     except asyncio.TimeoutError:
-                        # Check if we should exit
-                        if items_in_flight == 0:
-                            return
+                        # Check if we should exit (must hold lock to read items_in_flight)
+                        async with self._lock:
+                            if items_in_flight == 0:
+                                return
                         continue
 
                     # Process this catalog's nested refs
