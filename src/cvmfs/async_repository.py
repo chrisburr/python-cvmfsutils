@@ -6,23 +6,26 @@ Provides async access to CVMFS repositories using HTTP/2 for efficient
 parallel catalog downloads.
 """
 
+import io
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
+import aiofiles
 import dateutil.parser
 from dateutil.tz import tzutc
 
 from . import _common
 from ._exceptions import RepositoryNotFound, FileNotFoundInRepository
 from .async_fetcher import AsyncRemoteFetcher
-from .catalog import Catalog
+from .async_catalog import AsyncCatalog
 from .manifest import Manifest
 
 
 class AsyncRepository:
     """Async wrapper around a CVMFS Repository.
 
-    Uses AsyncRemoteFetcher for HTTP/2 multiplexed downloads.
+    Uses AsyncRemoteFetcher for HTTP/2 multiplexed downloads and
+    AsyncCatalog for non-blocking database access.
     """
 
     def __init__(self, fetcher: AsyncRemoteFetcher):
@@ -76,11 +79,17 @@ class AsyncRepository:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit async context - close the fetcher."""
+        """Exit async context - close the fetcher and catalogs."""
+        for catalog in self._opened_catalogs.values():
+            await catalog.close()
+        self._opened_catalogs.clear()
         await self._fetcher.__aexit__(exc_type, exc_val, exc_tb)
 
     async def close(self) -> None:
-        """Close the repository and its fetcher."""
+        """Close the repository, catalogs, and fetcher."""
+        for catalog in self._opened_catalogs.values():
+            await catalog.close()
+        self._opened_catalogs.clear()
         await self._fetcher.close()
 
     async def _initialize(self) -> None:
@@ -92,10 +101,13 @@ class AsyncRepository:
     async def _read_manifest(self) -> None:
         """Read and parse the repository manifest."""
         try:
-            manifest_file, _ = await self._fetcher.retrieve_raw_file(
+            manifest_path, _ = await self._fetcher.retrieve_raw_file(
                 _common._MANIFEST_NAME
             )
-            self.manifest = Manifest(manifest_file)
+            async with aiofiles.open(manifest_path, "rb") as f:
+                content = await f.read()
+            # Manifest expects a file-like object with sync methods
+            self.manifest = Manifest(io.BytesIO(content))
             self.fqrn = self.manifest.repository_name
         except FileNotFoundInRepository:
             raise RepositoryNotFound(self._fetcher.source)
@@ -115,10 +127,11 @@ class AsyncRepository:
     async def _try_to_get_last_replication_timestamp(self) -> None:
         """Try to read the last replication timestamp."""
         try:
-            rf, _ = await self._fetcher.retrieve_raw_file(
+            path, _ = await self._fetcher.retrieve_raw_file(
                 _common._LAST_REPLICATION_NAME
             )
-            timestamp = rf.readline()
+            async with aiofiles.open(path, "rb") as f:
+                timestamp = await f.readline()
             self.last_replication = self._read_timestamp(timestamp)
             if not self._has_repository_type():
                 self.type = "stratum1"
@@ -129,8 +142,9 @@ class AsyncRepository:
         """Try to read the replication state."""
         self.replicating = False
         try:
-            rf, _ = await self._fetcher.retrieve_raw_file(_common._REPLICATING_NAME)
-            timestamp = rf.readline()
+            path, _ = await self._fetcher.retrieve_raw_file(_common._REPLICATING_NAME)
+            async with aiofiles.open(path, "rb") as f:
+                timestamp = await f.readline()
             self.replicating = True
             self.replicating_since = self._read_timestamp(timestamp)
         except FileNotFoundInRepository:
@@ -144,35 +158,20 @@ class AsyncRepository:
         """Get the root catalog hash from the manifest."""
         return self.manifest.root_catalog
 
-    async def retrieve_catalog(self, catalog_hash: str) -> Tuple[Catalog, bool]:
+    async def retrieve_catalog(self, catalog_hash: str) -> Tuple[AsyncCatalog, bool]:
         """Download and open a catalog from the repository.
 
         Args:
             catalog_hash: Hash of the catalog to retrieve
 
         Returns:
-            Tuple of (Catalog object, was_cached)
+            Tuple of (AsyncCatalog object, was_cached)
         """
         if catalog_hash in self._opened_catalogs:
             return self._opened_catalogs[catalog_hash], True
 
         catalog, was_cached = await self._retrieve_and_open_catalog(catalog_hash)
         return catalog, was_cached
-
-    async def retrieve_object(
-        self, object_hash: str, hash_suffix: str = ""
-    ) -> Tuple[any, bool]:
-        """Retrieve an object from the content addressable storage.
-
-        Args:
-            object_hash: Hash of the object
-            hash_suffix: Optional suffix (e.g., 'C' for catalog)
-
-        Returns:
-            Tuple of (file object, was_cached)
-        """
-        path = f"data/{object_hash[:2]}/{object_hash[2:]}{hash_suffix}"
-        return await self._fetcher.retrieve_file(path)
 
     async def get_object_size(
         self, object_hash: str, hash_suffix: str = ""
@@ -191,23 +190,25 @@ class AsyncRepository:
 
     async def _retrieve_and_open_catalog(
         self, catalog_hash: str
-    ) -> Tuple[Catalog, bool]:
+    ) -> Tuple[AsyncCatalog, bool]:
         """Retrieve a catalog file and open it.
 
         Args:
             catalog_hash: Hash of the catalog
 
         Returns:
-            Tuple of (Catalog object, was_cached)
+            Tuple of (AsyncCatalog object, was_cached)
         """
-        catalog_file, was_cached = await self.retrieve_object(catalog_hash, "C")
-        new_catalog = Catalog(catalog_file, catalog_hash)
+        path = f"data/{catalog_hash[:2]}/{catalog_hash[2:]}C"
+        catalog_path, was_cached = await self._fetcher.retrieve_file(path)
+        new_catalog = await AsyncCatalog.open(catalog_path, catalog_hash)
         self._opened_catalogs[catalog_hash] = new_catalog
         return new_catalog, was_cached
 
-    def close_catalog(self, catalog: Catalog) -> None:
+    async def close_catalog(self, catalog: AsyncCatalog) -> None:
         """Close a catalog and remove it from the opened catalogs cache."""
         try:
+            await catalog.close()
             del self._opened_catalogs[catalog.hash]
         except KeyError:
             pass

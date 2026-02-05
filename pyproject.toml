@@ -17,6 +17,8 @@ pip = "*"
 setuptools-scm = "*"
 httpx = "*"
 h2 = "*"
+aiofiles = "*"
+aiosqlite = "*"
 
 [tool.pixi.pypi-dependencies]
 cvmfsutils = { path = ".", editable = true }

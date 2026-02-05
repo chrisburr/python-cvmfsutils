@@ -8,13 +8,15 @@ multiplexing for efficient parallel downloads of CVMFS catalog files.
 
 import asyncio
 import os
+import tempfile
 import zlib
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
+import aiofiles
+import aiofiles.os
 import httpx
 
 import cvmfs
-from .cache import DiskCache, DummyCache
 from ._exceptions import FileNotFoundInRepository
 
 
@@ -25,7 +27,7 @@ class AsyncRemoteFetcher:
     many concurrent requests over a single TCP connection.
     """
 
-    DEFAULT_CONCURRENCY = 50
+    DEFAULT_CONCURRENCY = 100
 
     def __init__(
         self,
@@ -38,14 +40,27 @@ class AsyncRemoteFetcher:
         Args:
             repo_url: Base URL of the CVMFS repository
             cache_dir: Directory for disk cache (None for no caching)
-            max_concurrency: Maximum concurrent requests (default: 50)
+            max_concurrency: Maximum concurrent requests (default: 100)
         """
         self.source = repo_url
-        self._cache = DiskCache(cache_dir) if cache_dir else DummyCache()
+        self._cache_dir = cache_dir
         self._max_concurrency = max_concurrency
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._client: Optional[httpx.AsyncClient] = None
         self._user_agent = f"{cvmfs.__package_name__}/{cvmfs.__version__}"
+
+        # Create cache directory structure
+        if cache_dir:
+            self._create_cache_structure()
+
+    def _create_cache_structure(self) -> None:
+        """Create the cache directory structure."""
+        os.makedirs(os.path.join(self._cache_dir, "data", "txn"), exist_ok=True)
+        for i in range(0x00, 0xFF + 1):
+            folder = f"{i:02x}"
+            os.makedirs(
+                os.path.join(self._cache_dir, "data", folder), exist_ok=True
+            )
 
     async def __aenter__(self) -> "AsyncRemoteFetcher":
         """Enter async context - create HTTP client."""
@@ -80,47 +95,53 @@ class AsyncRemoteFetcher:
 
     def get_cache_path(self) -> Optional[str]:
         """Get the cache directory path."""
-        if self._cache:
-            return self._cache.get_cache_path()
+        return self._cache_dir
+
+    def _get_cached_path(self, file_name: str) -> Optional[str]:
+        """Get the path to a cached file if it exists.
+
+        Args:
+            file_name: Name of the file in the cache
+
+        Returns:
+            Full path if cached, None otherwise
+        """
+        if not self._cache_dir:
+            return None
+        full_path = os.path.join(self._cache_dir, file_name)
+        if os.path.exists(full_path):
+            return full_path
         return None
 
-    def _is_cached(self, file_name: str) -> bool:
-        """Check if a file exists in the cache."""
-        cached = self._cache.get(file_name)
-        if cached:
-            cached.close()
-            return True
-        return False
-
-    async def retrieve_file(self, file_name: str) -> Tuple[any, bool]:
+    async def retrieve_file(self, file_name: str) -> Tuple[str, bool]:
         """Retrieve a file, decompressing it.
 
         Args:
             file_name: Name of the file in the repository
 
         Returns:
-            Tuple of (file object, was_cached)
+            Tuple of (path to cached file, was_cached)
 
         Raises:
             FileNotFoundInRepository: If the file doesn't exist
         """
         return await self._retrieve(file_name, decompress=True)
 
-    async def retrieve_raw_file(self, file_name: str) -> Tuple[any, bool]:
+    async def retrieve_raw_file(self, file_name: str) -> Tuple[str, bool]:
         """Retrieve a file without decompression.
 
         Args:
             file_name: Name of the file in the repository
 
         Returns:
-            Tuple of (file object, was_cached)
+            Tuple of (path to cached file, was_cached)
 
         Raises:
             FileNotFoundInRepository: If the file doesn't exist
         """
         return await self._retrieve(file_name, decompress=False)
 
-    async def _retrieve(self, file_name: str, decompress: bool) -> Tuple[any, bool]:
+    async def _retrieve(self, file_name: str, decompress: bool) -> Tuple[str, bool]:
         """Internal method to retrieve a file.
 
         Args:
@@ -128,12 +149,12 @@ class AsyncRemoteFetcher:
             decompress: Whether to decompress the file content
 
         Returns:
-            Tuple of (file object, was_cached)
+            Tuple of (path to file, was_cached)
         """
         # Check cache first
-        cached_file_ro = self._cache.get(file_name)
-        if cached_file_ro:
-            return cached_file_ro, True
+        cached_path = self._get_cached_path(file_name)
+        if cached_path:
+            return cached_path, True
 
         # Download from remote
         await self._ensure_client()
@@ -154,30 +175,30 @@ class AsyncRemoteFetcher:
                 content = zlib.decompress(content)
 
         # Write to cache
-        cached_file_rw = self._cache.transaction(file_name)
-        cached_file_rw.write(content)
-        return self._cache.commit(cached_file_rw), False
+        if self._cache_dir:
+            full_path = os.path.join(self._cache_dir, file_name)
+            tmp_dir = os.path.join(self._cache_dir, "data", "txn")
 
-    async def retrieve_files_batch(
-        self,
-        file_names: List[str],
-        decompress: bool = True,
-    ) -> List[Tuple[str, any, bool]]:
-        """Retrieve multiple files concurrently.
+            # Write to temp file then rename (atomic)
+            fd, tmp_path = tempfile.mkstemp(dir=tmp_dir, prefix="tmp.")
+            try:
+                async with aiofiles.open(fd, "wb", closefd=True) as f:
+                    await f.write(content)
+                await aiofiles.os.rename(tmp_path, full_path)
+            except Exception:
+                try:
+                    await aiofiles.os.remove(tmp_path)
+                except (IOError, OSError):
+                    pass
+                raise
 
-        Args:
-            file_names: List of file names to retrieve
-            decompress: Whether to decompress the files
-
-        Returns:
-            List of (file_name, file_object, was_cached) tuples
-        """
-        async def fetch_one(file_name: str) -> Tuple[str, any, bool]:
-            file_obj, was_cached = await self._retrieve(file_name, decompress)
-            return file_name, file_obj, was_cached
-
-        tasks = [fetch_one(fn) for fn in file_names]
-        return await asyncio.gather(*tasks)
+            return full_path, False
+        else:
+            # No cache - write to temp file
+            fd, tmp_path = tempfile.mkstemp(prefix="cvmfs_")
+            async with aiofiles.open(fd, "wb", closefd=True) as f:
+                await f.write(content)
+            return tmp_path, False
 
     async def get_file_size(self, file_name: str) -> Optional[int]:
         """Get the compressed file size via HEAD request.

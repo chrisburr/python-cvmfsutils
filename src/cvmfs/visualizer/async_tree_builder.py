@@ -31,7 +31,7 @@ class AsyncCatalogTreeBuilder:
         max_depth: Optional[int] = None,
         ignore_paths: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
-        max_workers: int = 10,
+        max_workers: int = 50,
     ):
         """Initialize the async tree builder.
 
@@ -255,7 +255,7 @@ class AsyncCatalogTreeBuilder:
                         continue
 
                     # Process this catalog's nested refs
-                    nested_refs = parent_catalog.list_nested()
+                    nested_refs = await parent_catalog.list_nested()
 
                     for ref in nested_refs:
                         try:
