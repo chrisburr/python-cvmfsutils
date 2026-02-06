@@ -20,6 +20,7 @@ import cvmfs
 from cvmfs.async_repository import AsyncRepository
 from cvmfs.visualizer import CatalogTreeBuilder, generate_html
 from cvmfs.visualizer.async_tree_builder import AsyncCatalogTreeBuilder
+from cvmfs.visualizer.tree_builder import CatalogNode
 
 
 def _format_bytes(bytes_val: int) -> str:
@@ -141,7 +142,7 @@ def _increase_file_limit() -> None:
         pass
 
 
-async def async_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
+async def async_main(args, cache_dir: str, ignore_paths: list, progress, previous_tree) -> tuple:
     """Async main function using HTTP/2 for efficient downloads.
 
     Args:
@@ -149,6 +150,7 @@ async def async_main(args, cache_dir: str, ignore_paths: list, progress) -> tupl
         cache_dir: Cache directory path or None
         ignore_paths: List of paths to ignore
         progress: ProgressReporter instance
+        previous_tree: Optional CatalogNode from previous run
 
     Returns:
         Tuple of (root_node, builder)
@@ -165,13 +167,14 @@ async def async_main(args, cache_dir: str, ignore_paths: list, progress) -> tupl
             ignore_paths=ignore_paths,
             progress_callback=progress,
             max_workers=args.workers,
+            previous_tree=previous_tree,
         )
 
         root_node = await builder.build()
         return root_node, builder, repo.fqrn
 
 
-def sync_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
+def sync_main(args, cache_dir: str, ignore_paths: list, progress, previous_tree) -> tuple:
     """Sync main function using the original requests-based fetcher.
 
     Args:
@@ -179,6 +182,7 @@ def sync_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
         cache_dir: Cache directory path or None
         ignore_paths: List of paths to ignore
         progress: ProgressReporter instance
+        previous_tree: Optional CatalogNode from previous run
 
     Returns:
         Tuple of (root_node, builder)
@@ -192,6 +196,7 @@ def sync_main(args, cache_dir: str, ignore_paths: list, progress) -> tuple:
         ignore_paths=ignore_paths,
         progress_callback=progress,
         max_workers=args.workers,
+        previous_tree=previous_tree,
     )
 
     root_node = builder.build()
@@ -307,6 +312,22 @@ Examples:
     )
 
     parser.add_argument(
+        "--previous-tree",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Load a JSON tree from a previous run for incremental caching",
+    )
+
+    parser.add_argument(
+        "--save-tree",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Save the result tree as JSON for future incremental runs",
+    )
+
+    parser.add_argument(
         "-j",
         "--workers",
         type=int,
@@ -357,14 +378,36 @@ Examples:
 
     progress = ProgressReporter(quiet=args.quiet)
 
+    # Load previous tree for incremental caching
+    previous_tree = None
+    if args.previous_tree and args.previous_tree.exists():
+        try:
+            raw = json.loads(args.previous_tree.read_text())
+            # Validate metadata matches current parameters
+            if (
+                raw.get("stop_threshold") == args.stop_threshold
+                and raw.get("max_depth") == args.max_depth
+            ):
+                previous_tree = CatalogNode.from_dict(raw["tree"])
+                if not args.quiet:
+                    print("Loaded previous tree cache for incremental run", file=sys.stderr)
+            elif not args.quiet:
+                print(
+                    "Previous tree cache parameters differ, ignoring cache",
+                    file=sys.stderr,
+                )
+        except Exception as e:
+            if not args.quiet:
+                print(f"Could not load previous tree cache: {e}", file=sys.stderr)
+
     try:
         if use_async:
             root_node, builder, repo_name = asyncio.run(
-                async_main(args, cache_dir, ignore_paths, progress)
+                async_main(args, cache_dir, ignore_paths, progress, previous_tree)
             )
         else:
             root_node, builder, repo_name = sync_main(
-                args, cache_dir, ignore_paths, progress
+                args, cache_dir, ignore_paths, progress, previous_tree
             )
     except Exception as e:
         progress.finish()
@@ -372,6 +415,21 @@ Examples:
         sys.exit(1)
 
     progress.finish()
+
+    # Save tree for future incremental runs
+    if args.save_tree:
+        try:
+            args.save_tree.parent.mkdir(parents=True, exist_ok=True)
+            envelope = {
+                "stop_threshold": args.stop_threshold,
+                "max_depth": args.max_depth,
+                "tree": root_node.to_dict(),
+            }
+            args.save_tree.write_text(json.dumps(envelope))
+            if not args.quiet:
+                print(f"Saved tree cache to: {args.save_tree}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: could not save tree cache: {e}", file=sys.stderr)
 
     if not args.quiet:
         ignored_msg = ""
@@ -391,6 +449,11 @@ Examples:
             f"skipped {_format_bytes(builder.bytes_skipped)}",
             file=sys.stderr,
         )
+        if builder.tree_cache_reused > 0:
+            print(
+                f"Tree cache: reused {builder.tree_cache_reused} nodes from previous run",
+                file=sys.stderr,
+            )
 
     # Output JSON
     if args.json:

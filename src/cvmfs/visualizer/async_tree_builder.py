@@ -12,7 +12,7 @@ from typing import Callable, List, Optional
 
 logger = logging.getLogger(__name__)
 
-from .tree_builder import CatalogNode
+from .tree_builder import CatalogNode, build_lookup, count_nodes, recalculate_tree
 
 
 class AsyncCatalogTreeBuilder:
@@ -32,6 +32,7 @@ class AsyncCatalogTreeBuilder:
         ignore_paths: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
         max_workers: int = 50,
+        previous_tree: Optional[CatalogNode] = None,
     ):
         """Initialize the async tree builder.
 
@@ -42,6 +43,7 @@ class AsyncCatalogTreeBuilder:
             ignore_paths: List of path prefixes to ignore
             progress_callback: Optional callback for progress updates
             max_workers: Number of async workers (default: 10)
+            previous_tree: Optional CatalogNode tree from a previous run for caching
         """
         self.repository = repository
         self.stop_threshold = stop_threshold
@@ -49,6 +51,8 @@ class AsyncCatalogTreeBuilder:
         self.ignore_paths = ignore_paths or []
         self.progress_callback = progress_callback
         self.max_workers = max_workers
+        self._previous_tree = previous_tree
+        self._previous_lookup = build_lookup(previous_tree) if previous_tree else {}
 
         # Statistics (protected by lock for concurrent access)
         self._lock = asyncio.Lock()
@@ -61,6 +65,7 @@ class AsyncCatalogTreeBuilder:
         self._ignored_count = 0
         self._cache_hits = 0
         self._bytes_from_cache = 0
+        self._tree_cache_reused = 0
 
     async def build(self) -> CatalogNode:
         """Build the catalog tree starting from the root.
@@ -70,6 +75,13 @@ class AsyncCatalogTreeBuilder:
         """
         # Get root catalog hash from manifest
         root_hash = self.repository.get_root_hash()
+
+        # Check if root hash matches previous tree (zero downloads needed)
+        if self._previous_tree and self._previous_tree.hash == root_hash:
+            self._tree_cache_reused = count_nodes(self._previous_tree)
+            recalculate_tree(self._previous_tree)
+            return self._previous_tree
+
         root_in_cache = self._is_catalog_in_cache(root_hash)
 
         # Retrieve root catalog
@@ -104,6 +116,7 @@ class AsyncCatalogTreeBuilder:
         if not root_node.is_large and (self.max_depth is None or self.max_depth > 0):
             await self._populate_children_async(root_node, root_catalog)
 
+        recalculate_tree(root_node)
         return root_node
 
     def _should_ignore(self, path: str) -> bool:
@@ -303,6 +316,34 @@ class AsyncCatalogTreeBuilder:
         # Wait for workers to finish
         await asyncio.gather(*workers, return_exceptions=True)
 
+    def _graft_at_path(
+        self,
+        root_node: CatalogNode,
+        parent_path: str,
+        cached_node: CatalogNode,
+    ) -> CatalogNode:
+        """Graft a cached subtree at the correct path location.
+
+        Like _insert_at_path but appends the cached node (with all children)
+        instead of creating a new node.
+        """
+        segments = self._get_path_segments(parent_path, cached_node.path)
+
+        current = root_node
+        for i, seg_path in enumerate(segments):
+            is_final = i == len(segments) - 1
+
+            if is_final:
+                current.children.append(cached_node)
+                return cached_node
+            else:
+                seg_depth = current.depth + 1
+                current = current.find_or_create_child(
+                    seg_path.split("/")[-1], seg_path, seg_depth
+                )
+
+        return current
+
     async def _process_single_ref(self, parent_node: CatalogNode, ref):
         """Process a single catalog reference.
 
@@ -314,6 +355,18 @@ class AsyncCatalogTreeBuilder:
             async with self._lock:
                 self._ignored_count += 1
             return None
+
+        # Check previous tree cache before downloading
+        cached_node = self._previous_lookup.get(ref.root_path)
+        if cached_node is not None and cached_node.hash == ref.hash:
+            reused = count_nodes(cached_node)
+            async with self._lock:
+                self._tree_cache_reused += reused
+                self._catalogs_found += reused
+                grafted = self._graft_at_path(
+                    parent_node, parent_node.path, cached_node
+                )
+            return grafted, None
 
         async with self._lock:
             self._catalogs_found += 1
@@ -425,3 +478,8 @@ class AsyncCatalogTreeBuilder:
     def bytes_from_cache(self) -> int:
         """Total bytes retrieved from cache."""
         return self._bytes_from_cache
+
+    @property
+    def tree_cache_reused(self) -> int:
+        """Number of catalog nodes reused from previous tree cache."""
+        return self._tree_cache_reused

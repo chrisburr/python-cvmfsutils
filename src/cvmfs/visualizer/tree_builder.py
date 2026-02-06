@@ -8,9 +8,10 @@ Traverses the catalog hierarchy and calculates cumulative download costs.
 import os
 import queue
 import threading
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 
 @dataclass
@@ -42,6 +43,21 @@ class CatalogNode:
             "children": [child.to_dict() for child in self.children],
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "CatalogNode":
+        """Construct a CatalogNode from a dictionary (inverse of to_dict())."""
+        return cls(
+            path=data["path"],
+            hash=data["hash"],
+            size_bytes=data["size"],
+            cumulative_cost=data["cumulative_cost"],
+            depth=data["depth"],
+            children=[cls.from_dict(c) for c in data.get("children", [])],
+            is_large=data.get("is_large", False),
+            is_root=data.get("is_root", False),
+            is_virtual=data.get("is_virtual", False),
+        )
+
     def find_or_create_child(self, path_segment: str, full_path: str, depth: int) -> "CatalogNode":
         """Find existing child with path or create a virtual intermediate node."""
         for child in self.children:
@@ -64,6 +80,50 @@ class CatalogNode:
         return virtual
 
 
+def build_lookup(node: CatalogNode) -> Dict[str, CatalogNode]:
+    """Build a path->node lookup dict via BFS for O(1) access."""
+    lookup: Dict[str, CatalogNode] = {}
+    queue_nodes = deque([node])
+    while queue_nodes:
+        current = queue_nodes.popleft()
+        if not current.is_virtual:
+            lookup[current.path] = current
+        queue_nodes.extend(current.children)
+    return lookup
+
+
+def count_nodes(node: CatalogNode) -> int:
+    """Count non-virtual nodes in a subtree."""
+    count = 0
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if not current.is_virtual:
+            count += 1
+        stack.extend(current.children)
+    return count
+
+
+def recalculate_tree(root: CatalogNode) -> None:
+    """Fix cumulative_cost and depth for all nodes top-down.
+
+    Needed because grafted subtrees have stale values from the
+    previous tree's parent chain.
+    """
+    stack = [(root, None)]
+    while stack:
+        node, parent = stack.pop()
+        if parent is None:
+            # Root node: depth 0, cost = own size
+            node.depth = 0
+            node.cumulative_cost = node.size_bytes
+        else:
+            node.depth = parent.depth + 1
+            node.cumulative_cost = parent.cumulative_cost + node.size_bytes
+        for child in node.children:
+            stack.append((child, node))
+
+
 class CatalogTreeBuilder:
     """Builds a tree of catalog nodes with cost calculations.
 
@@ -82,6 +142,7 @@ class CatalogTreeBuilder:
         ignore_paths: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
         max_workers: int = 1,
+        previous_tree: Optional[CatalogNode] = None,
     ):
         """Initialize the tree builder.
 
@@ -94,6 +155,7 @@ class CatalogTreeBuilder:
                 Receives a dict with keys: path, catalogs_downloaded,
                 bytes_downloaded, catalogs_found, large_catalogs_found
             max_workers: Number of parallel workers for downloading catalogs
+            previous_tree: Optional CatalogNode tree from a previous run for caching
         """
         self.repository = repository
         self.stop_threshold = stop_threshold
@@ -101,6 +163,8 @@ class CatalogTreeBuilder:
         self.ignore_paths = ignore_paths or []
         self.progress_callback = progress_callback
         self.max_workers = max_workers
+        self._previous_tree = previous_tree
+        self._previous_lookup = build_lookup(previous_tree) if previous_tree else {}
         self._lock = threading.Lock()
         self._catalogs_downloaded = 0
         self._total_bytes_downloaded = 0
@@ -111,6 +175,7 @@ class CatalogTreeBuilder:
         self._ignored_count = 0
         self._cache_hits = 0
         self._bytes_from_cache = 0
+        self._tree_cache_reused = 0
 
     def build(self) -> CatalogNode:
         """Build the catalog tree starting from the root.
@@ -120,8 +185,14 @@ class CatalogTreeBuilder:
         """
         revision = self.repository.get_current_revision()
 
-        # Check if root catalog is in cache before retrieving
+        # Check if root hash matches previous tree (zero downloads needed)
         root_hash = revision.root_hash
+        if self._previous_tree and self._previous_tree.hash == root_hash:
+            self._tree_cache_reused = count_nodes(self._previous_tree)
+            recalculate_tree(self._previous_tree)
+            return self._previous_tree
+
+        # Check if root catalog is in cache before retrieving
         root_in_cache = self._is_catalog_in_cache(root_hash)
 
         root_catalog = revision.retrieve_root_catalog()
@@ -155,6 +226,7 @@ class CatalogTreeBuilder:
         if not root_node.is_large and (self.max_depth is None or self.max_depth > 0):
             self._populate_children(root_node, root_catalog)
 
+        recalculate_tree(root_node)
         return root_node
 
     def _should_ignore(self, path: str) -> bool:
@@ -283,6 +355,34 @@ class CatalogTreeBuilder:
 
         return current
 
+    def _graft_at_path(
+        self,
+        root_node: CatalogNode,
+        parent_path: str,
+        cached_node: CatalogNode,
+    ) -> CatalogNode:
+        """Graft a cached subtree at the correct path location.
+
+        Like _insert_at_path but appends the cached node (with all children)
+        instead of creating a new node.
+        """
+        segments = self._get_path_segments(parent_path, cached_node.path)
+
+        current = root_node
+        for i, seg_path in enumerate(segments):
+            is_final = i == len(segments) - 1
+
+            if is_final:
+                current.children.append(cached_node)
+                return cached_node
+            else:
+                seg_depth = current.depth + 1
+                current = current.find_or_create_child(
+                    seg_path.split("/")[-1], seg_path, seg_depth
+                )
+
+        return current
+
     def _process_single_ref(self, parent_node: CatalogNode, ref):
         """Process a single catalog reference.
 
@@ -294,6 +394,18 @@ class CatalogTreeBuilder:
             with self._lock:
                 self._ignored_count += 1
             return None, None
+
+        # Check previous tree cache before downloading
+        cached_node = self._previous_lookup.get(ref.root_path)
+        if cached_node is not None and cached_node.hash == ref.hash:
+            reused = count_nodes(cached_node)
+            with self._lock:
+                self._tree_cache_reused += reused
+                self._catalogs_found += reused
+                grafted = self._graft_at_path(
+                    parent_node, parent_node.path, cached_node
+                )
+            return grafted, None
 
         with self._lock:
             self._catalogs_found += 1
@@ -482,3 +594,8 @@ class CatalogTreeBuilder:
     def bytes_from_cache(self) -> int:
         """Total bytes retrieved from cache."""
         return self._bytes_from_cache
+
+    @property
+    def tree_cache_reused(self) -> int:
+        """Number of catalog nodes reused from previous tree cache."""
+        return self._tree_cache_reused
