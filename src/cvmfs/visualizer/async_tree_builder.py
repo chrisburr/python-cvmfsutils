@@ -239,12 +239,20 @@ class AsyncCatalogTreeBuilder:
     ) -> None:
         """Populate all children using async work queue pattern.
 
-        Uses asyncio.Queue with multiple workers that process catalogs
-        and add newly discovered children to the queue.
+        Uses asyncio.Queue with multiple workers that process catalog refs.
+        Catalogs are listed and closed eagerly before enqueueing to avoid
+        accumulating open aiosqlite connections (each holds a thread).
         """
-        # Work queue holds (parent_node, parent_catalog) tuples
+        # Work queue holds (parent_node, nested_refs) tuples.
+        # Catalogs are closed before enqueueing so no open DB connections
+        # sit on the queue — only workers hold open connections.
         work_queue: asyncio.Queue = asyncio.Queue()
-        await work_queue.put((root_node, root_catalog))
+
+        # List root refs and close root catalog before enqueueing
+        root_refs = await root_catalog.list_nested()
+        await root_catalog.close()
+
+        await work_queue.put((root_node, root_refs))
 
         # Track items in flight to know when we're done
         items_in_flight = 1
@@ -257,7 +265,7 @@ class AsyncCatalogTreeBuilder:
                 try:
                     # Wait for work with timeout
                     try:
-                        parent_node, parent_catalog = await asyncio.wait_for(
+                        parent_node, nested_refs = await asyncio.wait_for(
                             work_queue.get(), timeout=0.1
                         )
                     except asyncio.TimeoutError:
@@ -267,21 +275,19 @@ class AsyncCatalogTreeBuilder:
                                 return
                         continue
 
-                    # Process this catalog's nested refs
-                    nested_refs = await parent_catalog.list_nested()
-
-                    # Close the catalog to free the database connection/thread
-                    await parent_catalog.close()
-
                     for ref in nested_refs:
                         try:
                             result = await self._process_single_ref(parent_node, ref)
                             if result is not None:
                                 child_node, child_catalog = result
                                 if child_catalog is not None:
-                                    async with self._lock:
-                                        items_in_flight += 1
-                                    await work_queue.put((child_node, child_catalog))
+                                    # List refs and close catalog before enqueueing
+                                    child_refs = await child_catalog.list_nested()
+                                    await child_catalog.close()
+                                    if child_refs:
+                                        async with self._lock:
+                                            items_in_flight += 1
+                                        await work_queue.put((child_node, child_refs))
                         except Exception as e:
                             logger.warning(
                                 "Failed to process catalog ref %s: %s",
