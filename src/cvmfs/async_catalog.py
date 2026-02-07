@@ -27,10 +27,11 @@ class AsyncCatalog:
     Uses aiosqlite for non-blocking database queries.
     """
 
-    def __init__(self, db_path: str, catalog_hash: str = ""):
+    def __init__(self, db_path: str, catalog_hash: str = "", is_temp: bool = False):
         """Initialize catalog (use open() factory method instead)."""
         self._db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
+        self._is_temp = is_temp
         self.hash = catalog_hash
         self.root_prefix = "/"
         self.schema = 0.0
@@ -38,17 +39,18 @@ class AsyncCatalog:
         self._db_size: Optional[int] = None
 
     @classmethod
-    async def open(cls, db_path: str, catalog_hash: str = "") -> "AsyncCatalog":
+    async def open(cls, db_path: str, catalog_hash: str = "", is_temp: bool = False) -> "AsyncCatalog":
         """Open a catalog database asynchronously.
 
         Args:
             db_path: Path to the catalog database file
             catalog_hash: Hash of the catalog
+            is_temp: If True, delete the file on close (for --no-cache mode)
 
         Returns:
             Initialized AsyncCatalog
         """
-        catalog = cls(db_path, catalog_hash)
+        catalog = cls(db_path, catalog_hash, is_temp=is_temp)
         await catalog._open_database()
         await catalog._read_properties()
         return catalog
@@ -59,10 +61,16 @@ class AsyncCatalog:
         self._db.row_factory = aiosqlite.Row
 
     async def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection and clean up temp files."""
         if self._db:
             await self._db.close()
             self._db = None
+        if self._is_temp and self._db_path:
+            try:
+                os.remove(self._db_path)
+            except OSError:
+                pass
+            self._db_path = None
 
     async def __aenter__(self) -> "AsyncCatalog":
         return self

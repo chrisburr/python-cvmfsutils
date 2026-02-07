@@ -192,6 +192,7 @@ class AsyncRepository:
         """
         path = f"data/{catalog_hash[:2]}/{catalog_hash[2:]}C"
         catalog_path, was_cached = await self._fetcher.retrieve_file(path)
-        new_catalog = await AsyncCatalog.open(catalog_path, catalog_hash)
+        is_temp = not was_cached and not self._fetcher.get_cache_path()
+        new_catalog = await AsyncCatalog.open(catalog_path, catalog_hash, is_temp=is_temp)
         return new_catalog, was_cached
 
