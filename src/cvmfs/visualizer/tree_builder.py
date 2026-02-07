@@ -139,6 +139,7 @@ class CatalogTreeBuilder:
         repository,
         stop_threshold: int = DEFAULT_STOP_THRESHOLD,
         max_depth: Optional[int] = None,
+        max_catalogs: Optional[int] = None,
         ignore_paths: Optional[List[str]] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
         max_workers: int = 1,
@@ -150,6 +151,7 @@ class CatalogTreeBuilder:
             repository: CVMFS repository object
             stop_threshold: Stop descending when catalog size exceeds this (bytes)
             max_depth: Maximum depth to traverse (None for unlimited)
+            max_catalogs: Maximum catalogs to download (None for unlimited)
             ignore_paths: List of path prefixes to ignore (e.g., ["/lib/var"])
             progress_callback: Optional callback function called during traversal.
                 Receives a dict with keys: path, catalogs_downloaded,
@@ -160,6 +162,7 @@ class CatalogTreeBuilder:
         self.repository = repository
         self.stop_threshold = stop_threshold
         self.max_depth = max_depth
+        self.max_catalogs = max_catalogs
         self.ignore_paths = ignore_paths or []
         self.progress_callback = progress_callback
         self.max_workers = max_workers
@@ -433,6 +436,12 @@ class CatalogTreeBuilder:
         # Check max depth based on actual tree depth
         if self.max_depth is not None and child_node.depth > self.max_depth:
             return child_node, None
+
+        # Check if we've hit the download limit
+        if self.max_catalogs is not None:
+            with self._lock:
+                if self._catalogs_downloaded >= self.max_catalogs:
+                    return child_node, None
 
         # Only descend into non-large catalogs
         if not is_large:

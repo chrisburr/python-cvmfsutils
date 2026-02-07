@@ -16,6 +16,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import zstandard as zstd
+
 import cvmfs
 from cvmfs.async_repository import AsyncRepository
 from cvmfs.visualizer import CatalogTreeBuilder, generate_html
@@ -164,6 +166,7 @@ async def async_main(args, cache_dir: str, ignore_paths: list, progress, previou
             repo,
             stop_threshold=args.stop_threshold,
             max_depth=args.max_depth,
+            max_catalogs=args.max_catalogs,
             ignore_paths=ignore_paths,
             progress_callback=progress,
             max_workers=args.workers,
@@ -193,6 +196,7 @@ def sync_main(args, cache_dir: str, ignore_paths: list, progress, previous_tree)
         repo,
         stop_threshold=args.stop_threshold,
         max_depth=args.max_depth,
+        max_catalogs=args.max_catalogs,
         ignore_paths=ignore_paths,
         progress_callback=progress,
         max_workers=args.workers,
@@ -259,6 +263,15 @@ Examples:
         default=None,
         metavar="N",
         help="Maximum depth to traverse (default: unlimited)",
+    )
+
+    parser.add_argument(
+        "--max-catalogs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Maximum number of catalogs to download (default: unlimited). "
+        "Useful for bootstrapping tree cache on very large repositories.",
     )
 
     parser.add_argument(
@@ -373,6 +386,8 @@ Examples:
             )
         if args.max_depth:
             print(f"  Max depth: {args.max_depth}", file=sys.stderr)
+        if args.max_catalogs:
+            print(f"  Max catalogs: {args.max_catalogs}", file=sys.stderr)
         if ignore_paths:
             print(f"  Ignoring: {', '.join(ignore_paths)}", file=sys.stderr)
 
@@ -382,7 +397,11 @@ Examples:
     previous_tree = None
     if args.previous_tree and args.previous_tree.exists():
         try:
-            raw = json.loads(args.previous_tree.read_text())
+            data = args.previous_tree.read_bytes()
+            if args.previous_tree.suffix == ".zst" or args.previous_tree.suffixes[-2:] == [".json", ".zst"]:
+                dctx = zstd.ZstdDecompressor()
+                data = dctx.decompress(data)
+            raw = json.loads(data)
             # Validate metadata matches current parameters
             if (
                 raw.get("stop_threshold") == args.stop_threshold
@@ -425,7 +444,12 @@ Examples:
                 "max_depth": args.max_depth,
                 "tree": root_node.to_dict(),
             }
-            args.save_tree.write_text(json.dumps(envelope))
+            json_bytes = json.dumps(envelope).encode()
+            if args.save_tree.suffix == ".zst" or args.save_tree.suffixes[-2:] == [".json", ".zst"]:
+                cctx = zstd.ZstdCompressor()
+                args.save_tree.write_bytes(cctx.compress(json_bytes))
+            else:
+                args.save_tree.write_bytes(json_bytes)
             if not args.quiet:
                 print(f"Saved tree cache to: {args.save_tree}", file=sys.stderr)
         except Exception as e:
