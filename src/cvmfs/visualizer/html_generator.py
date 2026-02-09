@@ -374,9 +374,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
 
             <div class="stats">
-                <strong>Build Statistics:</strong><br>
-                Catalogs downloaded: {catalogs_downloaded}<br>
-                Total downloaded: {total_downloaded}<br>
                 Generated: {generated_at}
             </div>
         </div>
@@ -640,24 +637,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def _format_bytes(bytes_val: int) -> str:
-    """Format bytes as human-readable string."""
-    if bytes_val == 0:
-        return "0 B"
-    suffixes = ["B", "KB", "MB", "GB", "TB"]
-    i = 0
-    while bytes_val >= 1024 and i < len(suffixes) - 1:
-        bytes_val /= 1024
-        i += 1
-    return f"{bytes_val:.2f} {suffixes[i]}"
-
-
 def generate_html(
     root_node: CatalogNode,
     repo_name: str,
     repo_url: str = "",
-    catalogs_downloaded: int = 0,
-    total_downloaded: int = 0,
     generated_at: str = "",
 ) -> str:
     """Generate a self-contained HTML visualization.
@@ -666,8 +649,6 @@ def generate_html(
         root_node: Root CatalogNode from tree builder
         repo_name: Repository name for display
         repo_url: Full repository URL for commands
-        catalogs_downloaded: Number of catalogs downloaded
-        total_downloaded: Total bytes downloaded
         generated_at: Timestamp string for when the visualization was generated
 
     Returns:
@@ -681,7 +662,5 @@ def generate_html(
         repo_url=repo_url or repo_name,
         d3_cdn=D3_CDN,
         data_json=data_json,
-        catalogs_downloaded=catalogs_downloaded,
-        total_downloaded=_format_bytes(total_downloaded),
         generated_at=generated_at,
     )
