@@ -389,18 +389,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }}
 
     // Color scale based on size
+    function sizeColor(size) {{
+        const mb = size / (1024 * 1024);
+        if (mb < 2) return "#22c55e";      // Green - small
+        if (mb < 10) return "#eab308";     // Yellow - medium
+        if (mb < 50) return "#f97316";     // Orange - large
+        return "#ef4444";                  // Red - very large
+    }}
+
     function getColor(d) {{
         // Virtual nodes (path intermediates without catalogs) are gray
         if (d.data.is_virtual) return "#4a5568";
 
-        const size = d.data.size || 0;
-        const mb = size / (1024 * 1024);
-
-        let color;
-        if (mb < 2) color = "#22c55e";      // Green - small
-        else if (mb < 10) color = "#eab308"; // Yellow - medium
-        else if (mb < 50) color = "#f97316"; // Orange - large
-        else color = "#ef4444";              // Red - very large
+        let color = sizeColor(d.data.size || 0);
 
         // Desaturate if exploration was stopped
         if (d.data.is_large && !d.children) {{
@@ -578,7 +579,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         const listHtml = catalogs.map(c =>
             `<div class="catalog-item" data-path="${{c.path}}" title="${{c.path}}">
-                <span class="catalog-size">${{formatBytes(c.size)}}:</span>
+                <span class="catalog-size" style="color: ${{sizeColor(c.size)}}">${{formatBytes(c.size)}}:</span>
                 <span class="catalog-path">${{c.path}}</span>
             </div>`
         ).join('');
