@@ -265,12 +265,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .path-bar .path {{
             color: #e94560;
         }}
+
+        .incomplete-banner {{
+            display: none;
+            background: #2d1f00;
+            border-bottom: 1px solid #6b4f1f;
+            padding: 0.5rem 2rem;
+            font-size: 0.85rem;
+            color: #eab308;
+        }}
     </style>
 </head>
 <body>
     <header>
         <h1><a href="https://chrisburr.github.io/cvmfs-catalog-visualizations/" style="color: inherit; text-decoration: none;">CVMFS Catalog Visualizer</a> - <span class="repo-name">{repo_name}</span></h1>
     </header>
+
+    <div class="incomplete-banner" id="incomplete-banner"></div>
 
     <div class="path-bar">
         <span class="label">Selected:</span>
@@ -663,6 +674,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             setTimeout(() => this.textContent = original, 1000);
         }});
     }});
+
+    // Show incomplete exploration banner if applicable
+    (function() {{
+        const stopped = root.descendants().filter(d => d.data.is_large && !d.children);
+        if (stopped.length > 0) {{
+            const banner = document.getElementById('incomplete-banner');
+            const totalSize = stopped.reduce((sum, d) => sum + (d.data.size || 0), 0);
+            banner.textContent = 'Incomplete: exploration was stopped at ' +
+                stopped.length + ' large catalog' + (stopped.length > 1 ? 's' : '') +
+                ' (total ' + formatBytes(totalSize) + ' unexplored)';
+            banner.style.display = 'block';
+        }}
+    }})();
 
     // Initial draw
     draw();
