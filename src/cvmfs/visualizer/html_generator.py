@@ -276,6 +276,60 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 0.85rem;
             color: #eab308;
         }}
+
+        @media (max-width: 768px) {{
+            header h1 {{
+                font-size: 1.1rem;
+            }}
+
+            .path-bar {{
+                padding: 0.5rem 1rem;
+                font-size: 0.8rem;
+            }}
+
+            .incomplete-banner {{
+                padding: 0.5rem 1rem;
+                font-size: 0.75rem;
+            }}
+
+            .container {{
+                flex-direction: column;
+                overflow: auto;
+            }}
+
+            .chart-container {{
+                max-height: none;
+                padding: 0.5rem;
+                aspect-ratio: 1;
+                max-width: 100vw;
+            }}
+
+            .legend {{
+                font-size: 0.65rem;
+                padding: 0.5rem 0.75rem;
+                bottom: 0.5rem;
+                right: 0.5rem;
+            }}
+
+            .legend-title {{
+                font-size: 0.65rem;
+            }}
+
+            .legend-item {{
+                font-size: 0.65rem;
+            }}
+
+            .legend-color {{
+                width: 10px;
+                height: 10px;
+            }}
+
+            .sidebar {{
+                width: 100%;
+                border-left: none;
+                border-top: 1px solid #0f3460;
+            }}
+        }}
     </style>
 </head>
 <body>
@@ -385,8 +439,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }}
     enrichTree(data, 0, 0);
 
-    const width = 800;
-    const height = 800;
+    const chartContainer = document.querySelector('.chart-container');
+    const size = Math.min(chartContainer.clientWidth - 32, chartContainer.clientHeight - 32, 800);
+    const width = size;
+    const height = size;
     const radius = width / 12;
 
     // Desaturate a hex color by blending with gray
