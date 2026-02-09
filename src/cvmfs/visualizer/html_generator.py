@@ -2,15 +2,13 @@
 """
 HTML generator for CVMFS catalog visualization.
 
-Generates a self-contained HTML file with an interactive D3.js sunburst chart.
+Generates a self-contained HTML file with an interactive canvas-based sunburst chart.
 """
 
 import json
-from typing import Union
-
 from .tree_builder import CatalogNode
 
-# D3.js CDN URL
+# D3.js CDN URL (used for hierarchy/partition layout only, not rendering)
 D3_CDN = "https://d3js.org/d3.v7.min.js"
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -71,8 +69,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         #chart {{
             max-width: min(80vh, 800px);
             max-height: 80vh;
-            width: 100%;
-            height: auto;
         }}
 
         .sidebar {{
@@ -184,7 +180,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin-top: 1rem;
         }}
 
-
         .instructions {{
             font-size: 0.8rem;
             color: #666;
@@ -255,11 +250,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             white-space: nowrap;
         }}
 
-        svg text {{
-            pointer-events: none;
-            user-select: none;
-        }}
-
         .path-bar {{
             background: #16213e;
             padding: 0.75rem 2rem;
@@ -289,7 +279,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <div class="container">
         <div class="chart-container">
-            <svg id="chart"></svg>
+            <canvas id="chart"></canvas>
             <div class="legend">
                 <div class="legend-title">Size Legend</div>
                 <div class="legend-item">
@@ -372,12 +362,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <script>
     const data = {data_json};
 
+    // Enrich tree: recompute depth and cumulative_cost (dropped from JSON for size)
+    function enrichTree(node, depth, parentCost) {{
+        node.depth = depth;
+        node.cumulative_cost = parentCost + (node.size || 0);
+        if (node.children) {{
+            for (const c of node.children) enrichTree(c, depth + 1, node.cumulative_cost);
+        }}
+    }}
+    enrichTree(data, 0, 0);
+
     const width = 800;
     const height = 800;
     const radius = width / 12;
 
     // Desaturate a hex color by blending with gray
-    function desaturate(hex, amount = 0.4) {{
+    function desaturate(hex, amount) {{
+        if (amount === undefined) amount = 0.4;
         const r = parseInt(hex.slice(1, 3), 16);
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
@@ -385,29 +386,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const nr = Math.round(r + (gray - r) * amount);
         const ng = Math.round(g + (gray - g) * amount);
         const nb = Math.round(b + (gray - b) * amount);
-        return `#${{nr.toString(16).padStart(2, '0')}}${{ng.toString(16).padStart(2, '0')}}${{nb.toString(16).padStart(2, '0')}}`;
+        return '#' + nr.toString(16).padStart(2, '0') + ng.toString(16).padStart(2, '0') + nb.toString(16).padStart(2, '0');
     }}
 
     // Color scale based on size
     function sizeColor(size) {{
         const mb = size / (1024 * 1024);
-        if (mb < 2) return "#22c55e";      // Green - small
-        if (mb < 10) return "#eab308";     // Yellow - medium
-        if (mb < 50) return "#f97316";     // Orange - large
-        return "#ef4444";                  // Red - very large
+        if (mb < 2) return "#22c55e";
+        if (mb < 10) return "#eab308";
+        if (mb < 50) return "#f97316";
+        return "#ef4444";
     }}
 
     function getColor(d) {{
-        // Virtual nodes (path intermediates without catalogs) are gray
         if (d.data.is_virtual) return "#4a5568";
-
         let color = sizeColor(d.data.size || 0);
-
-        // Desaturate if exploration was stopped
         if (d.data.is_large && !d.children) {{
             color = desaturate(color);
         }}
-
         return color;
     }}
 
@@ -435,54 +431,105 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     partition(root);
 
-    root.each(d => d.current = d);
+    root.each(d => {{
+        d.current = {{ x0: d.x0, x1: d.x1, y0: d.y0, y1: d.y1 }};
+    }});
 
-    // Create SVG
-    const svg = d3.select("#chart")
-        .attr("viewBox", [-width / 2, -height / 2, width, height])
-        .style("font", "10px sans-serif");
+    // Canvas setup with HiDPI support
+    const canvas = document.getElementById('chart');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
 
-    // Arc generator
-    const arc = d3.arc()
-        .startAngle(d => d.x0)
-        .endAngle(d => d.x1)
-        .padAngle(d => Math.min((d.x1 - d.x0) / 2, 0.005))
-        .padRadius(radius * 1.5)
-        .innerRadius(d => d.y0 * radius)
-        .outerRadius(d => Math.max(d.y0 * radius, d.y1 * radius - 1));
+    // Precompute flat list of descendants (excluding root) for drawing/hit testing
+    const descendants = root.descendants().slice(1);
 
-    // Create paths
-    const path = svg.append("g")
-        .selectAll("path")
-        .data(root.descendants().slice(1))
-        .join("path")
-        .attr("fill", d => getColor(d))
-        .attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.8 : 0.6) : 0)
-        .attr("pointer-events", d => arcVisible(d.current) ? "auto" : "none")
-        .attr("d", d => arc(d.current))
-        .style("cursor", "pointer")
-        .on("mouseover", handleMouseOver)
-        .on("mouseout", handleMouseOut)
-        .on("click", clicked);
+    // Track state
+    let currentNode = root;
+    let hoveredNode = null;
+    let animating = false;
 
-    // Center circle for zooming out to root
-    const parent = svg.append("circle")
-        .datum(root)
-        .attr("r", radius)
-        .attr("fill", getColor(root))
-        .attr("pointer-events", "all")
-        .style("cursor", "pointer")
-        .on("click", () => clicked(null, root))
-        .on("mouseover", handleMouseOver)
-        .on("mouseout", handleMouseOut);
+    function arcVisible(d) {{
+        return d.y1 <= 6 && d.y0 >= 1 && d.x1 > d.x0;
+    }}
 
-    // Center text
-    const centerText = svg.append("text")
-        .attr("text-anchor", "middle")
-        .attr("fill", "#eee")
-        .attr("dy", "0.35em")
-        .style("font-size", "14px")
-        .text("Click to zoom out");
+    function drawArc(cx, cy, x0, x1, innerR, outerR, color, opacity) {{
+        if (x1 - x0 < 0.001) return;
+        const startAngle = x0 - Math.PI / 2;
+        const endAngle = x1 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerR, startAngle, endAngle);
+        ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+        ctx.closePath();
+        ctx.globalAlpha = opacity;
+        ctx.fillStyle = color;
+        ctx.fill();
+    }}
+
+    function draw() {{
+        const cx = width / 2;
+        const cy = height / 2;
+
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw arcs
+        for (const d of descendants) {{
+            if (!arcVisible(d.current)) continue;
+            const innerR = d.current.y0 * radius;
+            const outerR = Math.max(d.current.y0 * radius, d.current.y1 * radius - 1);
+            const color = getColor(d);
+            let opacity;
+            if (d === hoveredNode) {{
+                opacity = 1;
+            }} else {{
+                opacity = d.children ? 0.8 : 0.6;
+            }}
+            drawArc(cx, cy, d.current.x0, d.current.x1, innerR, outerR, color, opacity);
+        }}
+
+        // Draw center circle
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+        ctx.closePath();
+        ctx.globalAlpha = hoveredNode === currentNode ? 1 : 0.9;
+        ctx.fillStyle = getColor(currentNode);
+        ctx.fill();
+
+        // Draw center text
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#eee';
+        ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Click to zoom out', cx, cy);
+    }}
+
+    function hitTest(clientX, clientY) {{
+        const rect = canvas.getBoundingClientRect();
+        const mx = (clientX - rect.left) * (width / rect.width) - width / 2;
+        const my = (clientY - rect.top) * (height / rect.height) - height / 2;
+        const r = Math.sqrt(mx * mx + my * my);
+
+        // Check center circle
+        if (r < radius) return currentNode;
+
+        let angle = Math.atan2(my, mx) + Math.PI / 2;
+        if (angle < 0) angle += 2 * Math.PI;
+
+        for (const d of descendants) {{
+            if (!arcVisible(d.current)) continue;
+            const innerR = d.current.y0 * radius;
+            const outerR = Math.max(d.current.y0 * radius, d.current.y1 * radius - 1);
+            if (r >= innerR && r <= outerR && angle >= d.current.x0 && angle < d.current.x1) {{
+                return d;
+            }}
+        }}
+        return null;
+    }}
 
     // Update info panel
     function updateInfo(d) {{
@@ -502,21 +549,135 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
     }}
 
-    // Track current zoomed node for restoring info on mouseout
-    let currentNode = root;
+    canvas.addEventListener('mousemove', function(event) {{
+        if (animating) return;
+        const hit = hitTest(event.clientX, event.clientY);
+        if (hit !== hoveredNode) {{
+            hoveredNode = hit;
+            canvas.style.cursor = hit ? 'pointer' : 'default';
+            if (hit) {{
+                updateInfo(hit);
+            }} else {{
+                updateInfo(currentNode);
+            }}
+            draw();
+        }}
+    }});
 
-    function handleMouseOver(event, d) {{
-        updateInfo(d);
-        d3.select(this).attr("fill-opacity", 1);
+    canvas.addEventListener('mouseleave', function() {{
+        if (hoveredNode) {{
+            hoveredNode = null;
+            canvas.style.cursor = 'default';
+            updateInfo(currentNode);
+            draw();
+        }}
+    }});
+
+    canvas.addEventListener('click', function(event) {{
+        if (animating) return;
+        const hit = hitTest(event.clientX, event.clientY);
+        if (!hit) return;
+
+        if (hit === currentNode) {{
+            // Clicking center: zoom out to parent
+            if (currentNode.parent) {{
+                clicked(currentNode.parent);
+            }}
+        }} else {{
+            clicked(hit);
+        }}
+    }});
+
+    function clicked(p) {{
+        root.each(d => {{
+            d.target = {{
+                x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
+                x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
+                y0: Math.max(0, d.y0 - p.depth),
+                y1: Math.max(0, d.y1 - p.depth)
+            }};
+        }});
+
+        // Save start positions for interpolation
+        root.each(d => {{
+            d._start = {{ x0: d.current.x0, x1: d.current.x1, y0: d.current.y0, y1: d.current.y1 }};
+        }});
+
+        currentNode = p;
+        hoveredNode = null;
+        updateInfo(p);
+        updateLargestCatalogs(p);
+        updateExploreCommand(p);
+
+        const duration = 750;
+        const start = performance.now();
+        animating = true;
+
+        function animate(now) {{
+            const elapsed = now - start;
+            const t = Math.min(1, elapsed / duration);
+            // Ease-in-out quadratic
+            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+            root.each(d => {{
+                d.current.x0 = d._start.x0 + (d.target.x0 - d._start.x0) * ease;
+                d.current.x1 = d._start.x1 + (d.target.x1 - d._start.x1) * ease;
+                d.current.y0 = d._start.y0 + (d.target.y0 - d._start.y0) * ease;
+                d.current.y1 = d._start.y1 + (d.target.y1 - d._start.y1) * ease;
+            }});
+
+            draw();
+
+            if (t < 1) {{
+                requestAnimationFrame(animate);
+            }} else {{
+                animating = false;
+            }}
+        }}
+
+        requestAnimationFrame(animate);
     }}
 
-    function handleMouseOut(event, d) {{
-        d3.select(this).attr("fill-opacity", d => arcVisible(d.current) ? (d.children ? 0.8 : 0.6) : 0);
-        updateInfo(currentNode);
+    // Update largest catalogs list for a given hierarchy node
+    function updateLargestCatalogs(hierarchyNode) {{
+        const catalogs = hierarchyNode.descendants()
+            .filter(d => !d.data.is_virtual && d.data.size > 0)
+            .map(d => ({{ path: d.data.path, size: d.data.size }}))
+            .sort((a, b) => b.size - a.size)
+            .slice(0, 10);
+
+        const listHtml = catalogs.map(c =>
+            '<div class="catalog-item" data-path="' + c.path + '" title="' + c.path + '">' +
+                '<span class="catalog-size" style="color: ' + sizeColor(c.size) + '">' + formatBytes(c.size) + ':</span>' +
+                '<span class="catalog-path">' + c.path + '</span>' +
+            '</div>'
+        ).join('');
+        document.getElementById('largest-catalogs').innerHTML = listHtml;
+
+        // Click to zoom in chart
+        document.querySelectorAll('.catalog-item').forEach(item => {{
+            item.addEventListener('click', () => {{
+                const targetPath = item.dataset.path;
+                const targetNode = root.descendants().find(d => d.data.path === targetPath);
+                if (targetNode) {{
+                    clicked(targetNode);
+                }}
+            }});
+        }});
     }}
 
-    // Initial info
+    // Initial info and sidebar population
     updateInfo(root);
+    updateLargestCatalogs(root);
+
+    // Update explore command for current path
+    const repoUrl = "{repo_url}";
+    function updateExploreCommand(node) {{
+        const path = node.data.path || "/";
+        const cmd = 'catalog_explorer ' + repoUrl + ' du ' + path;
+        document.getElementById('explore-command').textContent = cmd;
+    }}
+    updateExploreCommand(root);
 
     // Click to copy hash
     document.getElementById('info-hash').addEventListener('click', function() {{
@@ -530,85 +691,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
     }});
 
-    function clicked(event, p) {{
-        parent.datum(p.parent || root);
-
-        root.each(d => d.target = {{
-            x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-            x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
-            y0: Math.max(0, d.y0 - p.depth),
-            y1: Math.max(0, d.y1 - p.depth)
-        }});
-
-        const t = svg.transition().duration(750);
-
-        parent.transition(t)
-            .attr("fill", getColor(p));
-
-        path.transition(t)
-            .tween("data", d => {{
-                const i = d3.interpolate(d.current, d.target);
-                return t => d.current = i(t);
-            }})
-            .filter(function(d) {{
-                return +this.getAttribute("fill-opacity") || arcVisible(d.target);
-            }})
-            .attr("fill-opacity", d => arcVisible(d.target) ? (d.children ? 0.8 : 0.6) : 0)
-            .attr("pointer-events", d => arcVisible(d.target) ? "auto" : "none")
-            .attrTween("d", d => () => arc(d.current));
-
-        // Update current node
-        currentNode = p;
-
-        updateInfo(p);
-        updateLargestCatalogs(p);
-        updateExploreCommand(p);
-    }}
-
-    function arcVisible(d) {{
-        return d.y1 <= 6 && d.y0 >= 1 && d.x1 > d.x0;
-    }}
-
-    // Update largest catalogs list for a given hierarchy node
-    function updateLargestCatalogs(hierarchyNode) {{
-        const catalogs = hierarchyNode.descendants()
-            .filter(d => !d.data.is_virtual && d.data.size > 0)
-            .map(d => ({{ path: d.data.path, size: d.data.size }}))
-            .sort((a, b) => b.size - a.size)
-            .slice(0, 10);
-
-        const listHtml = catalogs.map(c =>
-            `<div class="catalog-item" data-path="${{c.path}}" title="${{c.path}}">
-                <span class="catalog-size" style="color: ${{sizeColor(c.size)}}">${{formatBytes(c.size)}}:</span>
-                <span class="catalog-path">${{c.path}}</span>
-            </div>`
-        ).join('');
-        document.getElementById('largest-catalogs').innerHTML = listHtml;
-
-        // Click to zoom in chart
-        document.querySelectorAll('.catalog-item').forEach(item => {{
-            item.addEventListener('click', () => {{
-                const targetPath = item.dataset.path;
-                const targetNode = root.descendants().find(d => d.data.path === targetPath);
-                if (targetNode) {{
-                    clicked(null, targetNode);
-                }}
-            }});
-        }});
-    }}
-
-    // Initial population
-    updateLargestCatalogs(root);
-
-    // Update explore command for current path
-    const repoUrl = "{repo_url}";
-    function updateExploreCommand(node) {{
-        const path = node.data.path || "/";
-        const cmd = `catalog_explorer ${{repoUrl}} du ${{path}}`;
-        document.getElementById('explore-command').textContent = cmd;
-    }}
-    updateExploreCommand(root);
-
     // Click to copy explore command
     document.getElementById('explore-command').addEventListener('click', function() {{
         const cmd = this.textContent;
@@ -618,6 +700,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             setTimeout(() => this.textContent = original, 1000);
         }});
     }});
+
+    // Initial draw
+    draw();
     </script>
 </body>
 </html>
@@ -642,7 +727,7 @@ def generate_html(
         Complete HTML string
     """
     data_dict = root_node.to_dict()
-    data_json = json.dumps(data_dict, indent=2)
+    data_json = json.dumps(data_dict, separators=(",", ":"))
 
     return HTML_TEMPLATE.format(
         repo_name=repo_name,

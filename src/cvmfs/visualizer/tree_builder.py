@@ -29,29 +29,38 @@ class CatalogNode:
     is_virtual: bool = False  # True for intermediate path nodes without a catalog
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
-        return {
+        """Convert to dictionary for JSON serialization.
+
+        Omits fields that are redundant (computable from tree structure)
+        or false-valued booleans to minimize JSON size.
+        """
+        d: dict = {
             "path": self.path,
-            "name": self.path.split("/")[-1] or "/",
             "hash": self.hash,
             "size": self.size_bytes,
-            "cumulative_cost": self.cumulative_cost,
-            "depth": self.depth,
-            "is_large": self.is_large,
-            "is_root": self.is_root,
-            "is_virtual": self.is_virtual,
-            "children": [child.to_dict() for child in self.children],
         }
+        if self.is_large:
+            d["is_large"] = True
+        if self.is_virtual:
+            d["is_virtual"] = True
+        if self.children:
+            d["children"] = [child.to_dict() for child in self.children]
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "CatalogNode":
-        """Construct a CatalogNode from a dictionary (inverse of to_dict())."""
+        """Construct a CatalogNode from a dictionary (inverse of to_dict()).
+
+        Handles both the compact format (no depth/cumulative_cost/name/is_root)
+        and the legacy format with all fields present. Missing depth and
+        cumulative_cost are fixed by calling recalculate_tree() after loading.
+        """
         return cls(
             path=data["path"],
             hash=data["hash"],
             size_bytes=data["size"],
-            cumulative_cost=data["cumulative_cost"],
-            depth=data["depth"],
+            cumulative_cost=data.get("cumulative_cost", 0),
+            depth=data.get("depth", 0),
             children=[cls.from_dict(c) for c in data.get("children", [])],
             is_large=data.get("is_large", False),
             is_root=data.get("is_root", False),
