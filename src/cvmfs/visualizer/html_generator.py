@@ -279,7 +279,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <header>
-        <h1>CVMFS Catalog Visualizer - <span class="repo-name">{repo_name}</span></h1>
+        <h1><a href="https://chrisburr.github.io/cvmfs-catalog-visualizations/" style="color: inherit; text-decoration: none;">CVMFS Catalog Visualizer</a> - <span class="repo-name">{repo_name}</span></h1>
     </header>
 
     <div class="path-bar">
