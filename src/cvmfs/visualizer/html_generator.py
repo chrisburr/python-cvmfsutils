@@ -677,13 +677,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Show incomplete exploration banner if applicable
     (function() {{
+        const parts = [];
         const stopped = root.descendants().filter(d => d.data.is_large && !d.children);
         if (stopped.length > 0) {{
-            const banner = document.getElementById('incomplete-banner');
             const totalSize = stopped.reduce((sum, d) => sum + (d.data.size || 0), 0);
-            banner.textContent = 'Incomplete: exploration was stopped at ' +
+            parts.push('exploration stopped at ' +
                 stopped.length + ' large catalog' + (stopped.length > 1 ? 's' : '') +
-                ' (total ' + formatBytes(totalSize) + ' unexplored)';
+                ' (' + formatBytes(totalSize) + ' unexplored)');
+        }}
+        const maxCatalogs = {max_catalogs};
+        const catalogsDownloaded = {catalogs_downloaded};
+        if (maxCatalogs > 0 && catalogsDownloaded >= maxCatalogs) {{
+            parts.push('download limit reached (' + catalogsDownloaded + '/' + maxCatalogs + ' catalogs)');
+        }}
+        if (parts.length > 0) {{
+            const banner = document.getElementById('incomplete-banner');
+            banner.textContent = 'Incomplete: ' + parts.join('; ');
             banner.style.display = 'block';
         }}
     }})();
@@ -701,6 +710,8 @@ def generate_html(
     repo_name: str,
     repo_url: str = "",
     generated_at: str = "",
+    max_catalogs: int = 0,
+    catalogs_downloaded: int = 0,
 ) -> str:
     """Generate a self-contained HTML visualization.
 
@@ -709,6 +720,8 @@ def generate_html(
         repo_name: Repository name for display
         repo_url: Full repository URL for commands
         generated_at: Timestamp string for when the visualization was generated
+        max_catalogs: The max_catalogs limit used during the run (0 = unlimited)
+        catalogs_downloaded: Number of catalogs actually downloaded
 
     Returns:
         Complete HTML string
@@ -722,4 +735,6 @@ def generate_html(
         d3_cdn=D3_CDN,
         data_json=data_json,
         generated_at=generated_at,
+        max_catalogs=max_catalogs,
+        catalogs_downloaded=catalogs_downloaded,
     )

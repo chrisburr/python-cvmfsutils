@@ -497,6 +497,8 @@ Examples:
         repo_name,
         repo_url=args.repo_identifier,
         generated_at=generated_at,
+        max_catalogs=args.max_catalogs or 0,
+        catalogs_downloaded=builder.catalogs_downloaded,
     )
 
     # Determine output path
