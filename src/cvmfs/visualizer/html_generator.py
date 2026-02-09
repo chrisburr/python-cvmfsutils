@@ -492,12 +492,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const innerR = d.current.y0 * radius;
             const outerR = Math.max(d.current.y0 * radius, d.current.y1 * radius - 1);
             const color = getColor(d);
-            let opacity;
-            if (d === hoveredNode) {{
-                opacity = 1;
-            }} else {{
-                opacity = d.children ? 0.8 : 0.6;
-            }}
+            const opacity = d === hoveredNode ? 1 : 0.85;
             drawArc(cx, cy, d.current.x0, d.current.x1, innerR, outerR, color, opacity);
         }}
 
