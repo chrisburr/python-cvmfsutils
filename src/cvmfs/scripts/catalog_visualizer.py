@@ -20,7 +20,12 @@ import zstandard as zstd
 
 import cvmfs
 from cvmfs.async_repository import AsyncRepository
-from cvmfs.visualizer import CatalogTreeBuilder, generate_html
+from cvmfs.visualizer import (
+    CatalogTreeBuilder,
+    generate_data_envelope,
+    generate_html,
+    generate_viewer_html,
+)
 from cvmfs.visualizer.async_tree_builder import AsyncCatalogTreeBuilder
 from cvmfs.visualizer.tree_builder import CatalogNode
 
@@ -243,7 +248,10 @@ Examples:
     )
 
     parser.add_argument(
-        "repo_identifier", help="Repository URL or local path"
+        "repo_identifier",
+        nargs="?",
+        default=None,
+        help="Repository URL or local path (not needed with --viewer)",
     )
 
     parser.add_argument(
@@ -278,6 +286,18 @@ Examples:
         "--json",
         action="store_true",
         help="Output JSON data instead of HTML",
+    )
+
+    parser.add_argument(
+        "--data-only",
+        action="store_true",
+        help="Output a .json.zst data file instead of HTML (for use with viewer)",
+    )
+
+    parser.add_argument(
+        "--viewer",
+        action="store_true",
+        help="Output the multi-repo viewer HTML page (no repo argument needed)",
     )
 
     parser.add_argument(
@@ -350,6 +370,19 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Handle --viewer mode (no repo needed)
+    if args.viewer:
+        html = generate_viewer_html()
+        output_path = args.output or Path("viewer.html")
+        output_path.write_text(html)
+        if not args.quiet:
+            print(f"Viewer written to: {output_path}", file=sys.stderr)
+        return
+
+    # Require repo_identifier for non-viewer modes
+    if not args.repo_identifier:
+        parser.error("repo_identifier is required (unless using --viewer)")
 
     # Determine cache directory
     cache_dir = None if args.no_cache else str(args.cache_dir)
@@ -490,8 +523,39 @@ Examples:
             print(output)
         return
 
-    # Generate HTML
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # Output compressed data envelope
+    if args.data_only:
+        envelope = generate_data_envelope(
+            root_node,
+            repo_name,
+            repo_url=args.repo_identifier,
+            generated_at=generated_at,
+            max_catalogs=args.max_catalogs or 0,
+            catalogs_downloaded=builder.catalogs_downloaded,
+        )
+        json_bytes = json.dumps(envelope, separators=(",", ":")).encode()
+        compressed = zstd.ZstdCompressor().compress(json_bytes)
+
+        if args.output:
+            output_path = args.output
+        else:
+            safe_name = repo_name.replace("/", "_").replace(".", "_")
+            output_path = Path(f"{safe_name}.json.zst")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(compressed)
+
+        if not args.quiet:
+            print(
+                f"Data written to: {output_path} "
+                f"({_format_bytes(len(json_bytes))} -> {_format_bytes(len(compressed))})",
+                file=sys.stderr,
+            )
+        return
+
+    # Generate HTML
     html = generate_html(
         root_node,
         repo_name,
