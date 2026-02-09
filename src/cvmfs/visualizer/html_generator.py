@@ -184,17 +184,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin-top: 1rem;
         }}
 
-        .breadcrumb {{
-            font-family: monospace;
-            font-size: 0.85rem;
-            color: #888;
-            margin-bottom: 1rem;
-            word-break: break-all;
-        }}
-
-        .breadcrumb span {{
-            color: #e94560;
-        }}
 
         .instructions {{
             font-size: 0.8rem;
@@ -274,7 +263,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .path-bar {{
             background: #16213e;
             padding: 0.75rem 2rem;
-            border-top: 1px solid #0f3460;
+            border-bottom: 1px solid #0f3460;
             font-family: monospace;
             font-size: 0.9rem;
             word-break: break-all;
@@ -292,6 +281,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <header>
         <h1>CVMFS Catalog Visualizer - <span class="repo-name">{repo_name}</span></h1>
     </header>
+
+    <div class="path-bar">
+        <span class="label">Selected:</span>
+        <span class="path" id="info-path">/</span>
+    </div>
 
     <div class="container">
         <div class="chart-container">
@@ -326,10 +320,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         <div class="sidebar">
-            <div class="breadcrumb">
-                Current view: <span id="breadcrumb">/</span>
-            </div>
-
             <h2>Selected Catalog</h2>
             <div class="info-panel" id="info-panel">
                 <div class="info-row">
@@ -377,11 +367,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 Generated: {generated_at}
             </div>
         </div>
-    </div>
-
-    <div class="path-bar">
-        <span class="label">Selected:</span>
-        <span class="path" id="info-path">/</span>
     </div>
 
     <script>
@@ -568,10 +553,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             .attr("pointer-events", d => arcVisible(d.target) ? "auto" : "none")
             .attrTween("d", d => () => arc(d.current));
 
-        // Update breadcrumb and current node
+        // Update current node
         currentNode = p;
-        let breadcrumb = p.data.path || "/";
-        document.getElementById("breadcrumb").textContent = breadcrumb;
 
         updateInfo(p);
         updateLargestCatalogs(p);
