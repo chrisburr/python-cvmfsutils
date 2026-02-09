@@ -204,7 +204,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin-top: 0.5rem;
             font-family: monospace;
             font-size: 0.75rem;
-            word-break: break-all;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
             cursor: pointer;
             position: relative;
         }}
