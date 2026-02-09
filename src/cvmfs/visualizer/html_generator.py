@@ -339,7 +339,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="instructions">
                 <strong>Instructions:</strong><br>
                 • Click on a segment to zoom in<br>
-                • Click center to zoom out<br>
+                • Click center to return to top level<br>
                 • Hover for details
             </div>
 
@@ -451,7 +451,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // Track state
     let currentNode = root;
     let hoveredNode = null;
-    let animating = false;
 
     function arcVisible(d) {{
         return d.y1 <= 6 && d.y0 >= 1 && d.x1 > d.x0;
@@ -505,7 +504,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Click to zoom out', cx, cy);
+        ctx.fillText('Click for top level', cx, cy);
     }}
 
     function hitTest(clientX, clientY) {{
@@ -550,7 +549,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }}
 
     canvas.addEventListener('mousemove', function(event) {{
-        if (animating) return;
         const hit = hitTest(event.clientX, event.clientY);
         if (hit !== hoveredNode) {{
             hoveredNode = hit;
@@ -574,15 +572,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }});
 
     canvas.addEventListener('click', function(event) {{
-        if (animating) return;
         const hit = hitTest(event.clientX, event.clientY);
         if (!hit) return;
 
         if (hit === currentNode) {{
-            // Clicking center: zoom out to parent
-            if (currentNode.parent) {{
-                clicked(currentNode.parent);
-            }}
+            // Clicking center: jump back to root
+            clicked(root);
         }} else {{
             clicked(hit);
         }}
@@ -590,7 +585,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function clicked(p) {{
         root.each(d => {{
-            d.target = {{
+            d.current = {{
                 x0: Math.max(0, Math.min(1, (d.x0 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
                 x1: Math.max(0, Math.min(1, (d.x1 - p.x0) / (p.x1 - p.x0))) * 2 * Math.PI,
                 y0: Math.max(0, d.y0 - p.depth),
@@ -598,44 +593,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }};
         }});
 
-        // Save start positions for interpolation
-        root.each(d => {{
-            d._start = {{ x0: d.current.x0, x1: d.current.x1, y0: d.current.y0, y1: d.current.y1 }};
-        }});
-
         currentNode = p;
         hoveredNode = null;
         updateInfo(p);
         updateLargestCatalogs(p);
         updateExploreCommand(p);
-
-        const duration = 750;
-        const start = performance.now();
-        animating = true;
-
-        function animate(now) {{
-            const elapsed = now - start;
-            const t = Math.min(1, elapsed / duration);
-            // Ease-in-out quadratic
-            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-
-            root.each(d => {{
-                d.current.x0 = d._start.x0 + (d.target.x0 - d._start.x0) * ease;
-                d.current.x1 = d._start.x1 + (d.target.x1 - d._start.x1) * ease;
-                d.current.y0 = d._start.y0 + (d.target.y0 - d._start.y0) * ease;
-                d.current.y1 = d._start.y1 + (d.target.y1 - d._start.y1) * ease;
-            }});
-
-            draw();
-
-            if (t < 1) {{
-                requestAnimationFrame(animate);
-            }} else {{
-                animating = false;
-            }}
-        }}
-
-        requestAnimationFrame(animate);
+        draw();
     }}
 
     // Update largest catalogs list for a given hierarchy node
