@@ -468,7 +468,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const parent = svg.append("circle")
         .datum(root)
         .attr("r", radius)
-        .attr("fill", "#16213e")
+        .attr("fill", getColor(root))
         .attr("pointer-events", "all")
         .style("cursor", "pointer")
         .on("click", () => clicked(null, root))
@@ -540,6 +540,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }});
 
         const t = svg.transition().duration(750);
+
+        parent.transition(t)
+            .attr("fill", getColor(p));
 
         path.transition(t)
             .tween("data", d => {{
