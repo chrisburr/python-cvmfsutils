@@ -19,7 +19,6 @@ httpx = "*"
 h2 = "*"
 aiofiles = "*"
 aiosqlite = "*"
-zstandard = "*"
 
 [tool.pixi.pypi-dependencies]
 cvmfsutils = { path = ".", editable = true }
