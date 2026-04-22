@@ -11,6 +11,8 @@ from typing import List, Optional
 
 import aiosqlite
 
+from .root_file import parse_hash_string
+
 
 @dataclass
 class AsyncCatalogReference:
@@ -19,6 +21,7 @@ class AsyncCatalogReference:
     root_path: str
     hash: str
     size: int = 0
+    algorithm: str = "sha1"
 
 
 class AsyncCatalog:
@@ -117,12 +120,24 @@ class AsyncCatalog:
         results = []
         async with self._db.execute(sql) as cursor:
             async for row in cursor:
+                # The "sha1" column historically held a SHA-1 hex digest. In
+                # mixed repos (e.g. migrated SHA1 -> SHAKE128), entries may be
+                # either bare hex or "<hex>-<algo>", per-entry. Strip the
+                # suffix for the .hash field and record the algorithm so the
+                # CAS path can be constructed correctly for each reference.
+                nested_hash, nested_algo = parse_hash_string(row[1])
                 if new_version:
                     results.append(
-                        AsyncCatalogReference(row[0], row[1], row[2])
+                        AsyncCatalogReference(
+                            row[0], nested_hash, row[2], nested_algo
+                        )
                     )
                 else:
-                    results.append(AsyncCatalogReference(row[0], row[1]))
+                    results.append(
+                        AsyncCatalogReference(
+                            row[0], nested_hash, algorithm=nested_algo
+                        )
+                    )
 
         return results
 

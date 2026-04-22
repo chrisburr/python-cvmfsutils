@@ -151,46 +151,49 @@ class AsyncRepository:
         """Get the root catalog hash from the manifest."""
         return self.manifest.root_catalog
 
-    async def retrieve_catalog(self, catalog_hash: str) -> Tuple[AsyncCatalog, bool]:
+    async def retrieve_catalog(
+        self, catalog_hash: str, algorithm: Optional[str] = None
+    ) -> Tuple[AsyncCatalog, bool]:
         """Download and open a catalog from the repository.
 
         Note: Caller is responsible for closing the catalog when done.
 
         Args:
-            catalog_hash: Hash of the catalog to retrieve
+            catalog_hash: Hash of the catalog to retrieve (bare hex)
+            algorithm: Hash algorithm for this specific catalog. Defaults to
+                the manifest's algorithm; override for per-reference algos
+                (e.g. mixed-mode repos).
 
         Returns:
             Tuple of (AsyncCatalog object, was_cached)
         """
-        return await self._retrieve_and_open_catalog(catalog_hash)
+        return await self._retrieve_and_open_catalog(catalog_hash, algorithm)
 
     async def get_object_size(
-        self, object_hash: str, hash_suffix: str = ""
+        self,
+        object_hash: str,
+        hash_suffix: str = "",
+        algorithm: Optional[str] = None,
     ) -> Optional[int]:
-        """Get the compressed size of an object without downloading it.
-
-        Args:
-            object_hash: Hash of the object
-            hash_suffix: Optional suffix
-
-        Returns:
-            Size in bytes, or None if cannot be determined
-        """
-        path = f"data/{object_hash[:2]}/{object_hash[2:]}{hash_suffix}"
+        """Get the compressed size of an object without downloading it."""
+        path = f"data/{object_hash[:2]}/{object_hash[2:]}{self.hash_algo_infix(algorithm)}{hash_suffix}"
         return await self._fetcher.get_file_size(path)
 
-    async def _retrieve_and_open_catalog(
-        self, catalog_hash: str
-    ) -> Tuple[AsyncCatalog, bool]:
-        """Retrieve a catalog file and open it.
+    def hash_algo_infix(self, algorithm: Optional[str] = None) -> str:
+        """Return the "-<algo>" CAS-path segment for a hash algorithm.
 
-        Args:
-            catalog_hash: Hash of the catalog
-
-        Returns:
-            Tuple of (AsyncCatalog object, was_cached)
+        Empty string for sha1 (historical default, no infix on disk).
+        When algorithm is None, falls back to the manifest's algorithm.
         """
-        path = f"data/{catalog_hash[:2]}/{catalog_hash[2:]}C"
+        if algorithm is None:
+            algorithm = getattr(self.manifest, "hash_algorithm", "sha1")
+        return "" if algorithm == "sha1" else "-" + algorithm
+
+    async def _retrieve_and_open_catalog(
+        self, catalog_hash: str, algorithm: Optional[str] = None
+    ) -> Tuple[AsyncCatalog, bool]:
+        """Retrieve a catalog file and open it."""
+        path = f"data/{catalog_hash[:2]}/{catalog_hash[2:]}{self.hash_algo_infix(algorithm)}C"
         catalog_path, was_cached = await self._fetcher.retrieve_file(path)
         is_temp = not was_cached and not self._fetcher.get_cache_path()
         new_catalog = await AsyncCatalog.open(catalog_path, catalog_hash, is_temp=is_temp)
