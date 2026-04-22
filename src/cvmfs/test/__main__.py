@@ -28,6 +28,7 @@ from .whitelist_test    import *
 from .md5_handling_test import *
 from .certificate_test  import *
 from .repository_test   import *
+from .shake128_test     import *
 
 import optparse
 import sys

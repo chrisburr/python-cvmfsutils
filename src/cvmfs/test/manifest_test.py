@@ -6,6 +6,7 @@ This file is part of the CernVM File System auxiliary tools.
 
 import base64
 import datetime
+import hashlib
 import io
 import unittest
 import zlib
@@ -296,3 +297,58 @@ class TestManifest(unittest.TestCase):
         cert = cvmfs.Certificate(open(self.certificate_file))
         is_valid = manifest.verify_signature(cert)
         self.assertFalse(is_valid)
+
+
+    def _build_shake128_manifest(self, mutate_checksum=None):
+        body_lines = [
+            b'Cca091b24e7a2a466592a71511cf9f5fae04a7263-shake128',
+            b'B10516480',
+            b'Rd41d8cd98f00b204e9800998ecf8427e',
+            b'D240',
+            b'S10652',
+            b'Nsoft.computecanada.ca',
+            b'Xa9938e06a2d59d9c3fff179305ae7133129e5e12-shake128',
+            b'H413244736cd260c23ef26f9086baaf1b8e4bc59d-shake128',
+            b'T1776803048',
+            b'M4bbaa296efcd2692075061aac3fe74a90141c9ef-shake128',
+            b'Gyes',
+            b'Ano',
+            b'Yb5c937ed0a846bf9d060054cfab0fe6ed7aa96c5-shake128',
+        ]
+        content = b'\n'.join(body_lines) + b'\n'
+        checksum = hashlib.shake_128(content).hexdigest(20) + '-shake128'
+        if mutate_checksum is not None:
+            checksum = mutate_checksum(checksum)
+        return io.BytesIO(
+            content + b'--\n' + checksum.encode() + b'\nBINARY-SIGNATURE-BYTES'
+        )
+
+    def test_shake128_manifest(self):
+        manifest = cvmfs.Manifest(self._build_shake128_manifest())
+        self.assertEqual('ca091b24e7a2a466592a71511cf9f5fae04a7263', manifest.root_catalog)
+        self.assertEqual('a9938e06a2d59d9c3fff179305ae7133129e5e12', manifest.certificate)
+        self.assertEqual('413244736cd260c23ef26f9086baaf1b8e4bc59d', manifest.history_database)
+        self.assertEqual('4bbaa296efcd2692075061aac3fe74a90141c9ef', manifest.repoinfo)
+        self.assertEqual('soft.computecanada.ca', manifest.repository_name)
+        self.assertEqual('shake128', manifest.hash_algorithm)
+        self.assertEqual('shake128', manifest.signature_hash_algorithm)
+        self.assertTrue(manifest.signature_checksum.endswith('-shake128'))
+        self.assertEqual(b'BINARY-SIGNATURE-BYTES', manifest.signature)
+
+    def test_shake128_mismatched_checksum(self):
+        stream = self._build_shake128_manifest(
+            mutate_checksum=lambda s: '0' * 40 + '-shake128'
+        )
+        self.assertRaises(cvmfs.InvalidRootFileSignature, cvmfs.Manifest, stream)
+
+    def test_shake128_unknown_algorithm(self):
+        stream = self._build_shake128_manifest(
+            mutate_checksum=lambda s: s.rsplit('-', 1)[0] + '-sha999'
+        )
+        self.assertRaises(cvmfs.IncompleteRootFileSignature, cvmfs.Manifest, stream)
+
+    def test_shake128_malformed_hex(self):
+        stream = self._build_shake128_manifest(
+            mutate_checksum=lambda s: 'zz' + s[2:]
+        )
+        self.assertRaises(cvmfs.IncompleteRootFileSignature, cvmfs.Manifest, stream)

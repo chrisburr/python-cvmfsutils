@@ -7,12 +7,22 @@ This file is part of the CernVM File System auxiliary tools.
 from datetime import datetime
 from dateutil.tz import tzutc
 
-from .root_file import RootFile
+from .root_file import RootFile, parse_hash_string
 from ._exceptions import *
 
 
 class Manifest(RootFile):
     """ Wraps information from .cvmfspublished """
+
+    def _store_content_hash(self, attr, raw):
+        """Strip the optional "-<algo>" suffix and record the hash algorithm.
+
+        Content-addressed paths (data/xx/yyyy...C) are constructed from the bare
+        hex digest, so downstream consumers expect the stripped form.
+        """
+        hex_digest, algorithm = parse_hash_string(raw)
+        setattr(self, attr, hex_digest)
+        self.hash_algorithm = algorithm
 
     @staticmethod
     def open(manifest_path):
@@ -45,15 +55,15 @@ class Manifest(RootFile):
         key_char = line[0]
         data     = line[1:-1]
         if   key_char == "C":
-            self.root_catalog        = data
+            self._store_content_hash('root_catalog', data)
         elif key_char == "R":
             self.root_hash           = data
         elif key_char == "B":
             self.root_catalog_size   = int(data)
         elif key_char == "X":
-            self.certificate         = data
+            self._store_content_hash('certificate', data)
         elif key_char == "H":
-            self.history_database    = data
+            self._store_content_hash('history_database', data)
         elif key_char == "T":
             self.last_modified       = datetime.fromtimestamp(int(data), tz=tzutc())
         elif key_char == "D":
@@ -63,13 +73,13 @@ class Manifest(RootFile):
         elif key_char == "N":
             self.repository_name     = data
         elif key_char == "L":
-            self.micro_catalog       = data
+            self._store_content_hash('micro_catalog', data)
         elif key_char == "G":
             self.garbage_collectable = (data == "yes")
         elif key_char == "A":
             self.bootstrap_shortcuts = (data == "yes")
         elif key_char == "M":
-            self.repoinfo            = data
+            self._store_content_hash('repoinfo', data)
         elif key_char == "V":
             self.cvmfs_version       = data
         elif key_char == "Y":

@@ -157,16 +157,31 @@ class Repository(object):
         certificate = self.retrieve_object(self.manifest.certificate, 'X')
         return Certificate(certificate)
 
-    def retrieve_catalog(self, catalog_hash):
+    def retrieve_catalog(self, catalog_hash, algorithm=None):
         """ Download and open a catalog from the repository """
         if catalog_hash in self._opened_catalogs:
             return self._opened_catalogs[catalog_hash]
-        return self._retrieve_and_open_catalog(catalog_hash)
+        return self._retrieve_and_open_catalog(catalog_hash, algorithm)
 
-    def retrieve_object(self, object_hash, hash_suffix = ''):
+    def retrieve_object(self, object_hash, hash_suffix='', algorithm=None):
         """ Retrieves an object from the content addressable storage """
-        path = "data/" + object_hash[:2] + "/" + object_hash[2:] + hash_suffix
+        path = "data/" + object_hash[:2] + "/" + object_hash[2:] + self.hash_algo_infix(algorithm) + hash_suffix
         return self._fetcher.retrieve_file(path)
+
+    def get_object_size(self, object_hash, hash_suffix='', algorithm=None):
+        """ Gets the compressed size of an object without downloading it """
+        path = "data/" + object_hash[:2] + "/" + object_hash[2:] + self.hash_algo_infix(algorithm) + hash_suffix
+        return self._fetcher.get_file_size(path)
+
+    def hash_algo_infix(self, algorithm=None):
+        """Return the "-<algo>" CAS-path segment for non-SHA1 hashes, or "".
+
+        When algorithm is None, falls back to the manifest's algorithm.
+        Pass per-reference algorithms explicitly for mixed-mode repos.
+        """
+        if algorithm is None:
+            algorithm = getattr(self.manifest, 'hash_algorithm', 'sha1')
+        return '' if algorithm == 'sha1' else '-' + algorithm
 
     def close_catalog(self, catalog):
         try:
@@ -174,8 +189,8 @@ class Repository(object):
         except KeyError as e:
             print("not found:" , catalog.hash)
 
-    def _retrieve_and_open_catalog(self, catalog_hash):
-        catalog_file = self.retrieve_object(catalog_hash, 'C')
+    def _retrieve_and_open_catalog(self, catalog_hash, algorithm=None):
+        catalog_file = self.retrieve_object(catalog_hash, 'C', algorithm)
         new_catalog = Catalog(catalog_file, catalog_hash)
         self._opened_catalogs[catalog_hash] = new_catalog
         return new_catalog

@@ -12,6 +12,7 @@ import os
 
 from ._common import _split_md5, DatabaseObject
 from .dirent  import DirectoryEntry, Chunk
+from .root_file import parse_hash_string
 
 
 class CatalogIterator:
@@ -62,10 +63,11 @@ class CatalogIterator:
 class CatalogReference:
     """ Wraps a catalog reference to nested catalogs as found in Catalogs """
 
-    def __init__(self, root_path, clg_hash, clg_size = 0):
+    def __init__(self, root_path, clg_hash, clg_size = 0, algorithm = 'sha1'):
         self.root_path = root_path
         self.hash      = clg_hash
         self.size      = clg_size
+        self.algorithm = algorithm
 
     def __str__(self):
         return "<CatalogReference for " + self.root_path + " - " + self.hash + ">"
@@ -74,7 +76,7 @@ class CatalogReference:
         return "<CatalogReference for " + self.root_path + ">"
 
     def retrieve_from(self, source_repository):
-        return source_repository.retrieve_catalog(self.hash)
+        return source_repository.retrieve_catalog(self.hash, self.algorithm)
 
 
 
@@ -192,10 +194,18 @@ class Catalog(DatabaseObject):
         else:
             sql_query = "SELECT path, sha1 FROM nested_catalogs;"
         catalogs = self.run_sql(sql_query)
-        if new_version:
-            return [ CatalogReference(clg[0], clg[1], clg[2]) for clg in catalogs ]
-        else:
-            return [ CatalogReference(clg[0], clg[1]) for clg in catalogs ]
+        # The "sha1" column holds hex text that may be bare (historical SHA-1)
+        # or "<hex>-<algo>" per-entry. In mixed repositories migrated from SHA1
+        # to SHAKE128, both forms can coexist in a single table, so parse each
+        # row independently and carry the algorithm on the reference.
+        refs = []
+        for clg in catalogs:
+            ref_hash, ref_algo = parse_hash_string(clg[1])
+            if new_version:
+                refs.append(CatalogReference(clg[0], ref_hash, clg[2], ref_algo))
+            else:
+                refs.append(CatalogReference(clg[0], ref_hash, algorithm=ref_algo))
+        return refs
 
 
     def get_statistics(self):
