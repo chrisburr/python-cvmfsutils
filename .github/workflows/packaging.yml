@@ -58,13 +58,17 @@ jobs:
       timeout-minutes: 10
       run: |
         dnf update -y
-        dnf install -y git rpm-build rpm-devel python3-pip python3-devel python3-setuptools
-        dnf install -y python3-requests python3-dateutil python3-cryptography
+        dnf install -y git rpm-build rpm-devel
 
-        # Enable PowerTools/CRB for additional packages
+        # AlmaLinux 8 ships Python 3.6 which is too old; use python3.11 from AppStream
         if [ "${{ matrix.alma-version }}" = "8" ]; then
           dnf config-manager --set-enabled powertools || true
+          dnf install -y python3.11 python3.11-pip python3.11-devel python3.11-setuptools python3.11-rpm-macros
+          # python3.11-dateutil is not packaged for EL8; the spec bundles it via pip at %install
+          dnf install -y python3.11-requests python3.11-cryptography python3.11-six
         else
+          dnf install -y python3-pip python3-devel python3-setuptools
+          dnf install -y python3-requests python3-dateutil python3-cryptography
           dnf config-manager --set-enabled crb || true
           dnf install -y python3-pyproject-rpm-macros || true
         fi
