@@ -14,6 +14,22 @@ BuildArch: noarch
 Vendor: Rene Meusel <rene.meusel@cern.ch>
 Url: http://cernvm.cern.ch
 
+%if 0%{?rhel} == 8
+# AlmaLinux/RHEL 8 ships Python 3.6 which is too old; use python3.11 from AppStream.
+# python3.11-dateutil is not packaged for EL8, so it is bundled via pip below.
+%global __python3 /usr/bin/python3.11
+%global python3_sitelib /usr/lib/python3.11/site-packages
+
+BuildRequires: python3.11
+BuildRequires: python3.11-rpm-macros
+BuildRequires: python3.11-pip
+BuildRequires: python3.11-setuptools
+
+Requires: python3.11
+Requires: python3.11-requests
+Requires: python3.11-cryptography
+Requires: python3.11-six
+%else
 BuildRequires: python3
 BuildRequires: python3-rpm-macros
 BuildRequires: python3-pip
@@ -22,6 +38,7 @@ BuildRequires: python3-setuptools
 Requires: python3-dateutil
 Requires: python3-requests
 Requires: python3-cryptography
+%endif
 
 %description
 The CernVM-FS python package allows for the inspection of CernVM-FS
@@ -37,7 +54,11 @@ files) and the history of named snapshots inside any CernVM-FS repository.
 # No build step needed - pip install handles everything
 
 %install
-python3 -m pip install --no-deps --root=%{buildroot} %{_sourcedir}/cvmfsutils-0.6.0.tar.gz
+%{__python3} -m pip install --no-deps --root=%{buildroot} %{_sourcedir}/cvmfsutils-0.6.0.tar.gz
+%if 0%{?rhel} == 8
+# python3.11-dateutil is not packaged for EL8; bundle it (six comes from system)
+%{__python3} -m pip install --no-deps --root=%{buildroot} 'python-dateutil >= 1.4.1'
+%endif
 
 %clean
 rm -rf $RPM_BUILD_ROOT
